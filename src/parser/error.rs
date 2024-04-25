@@ -1,16 +1,16 @@
+#[derive(Debug, PartialEq)]
 pub enum ParseError {
     LexError(LexError),
-    SintacticError(SintacticError),
+    SyntacticError(SyntacticError),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum LexError {
-    ExpectedCharacter(char),
-    ExpectedPattern(String),
-    ExpectedOneOf(Vec<String>),
-    InvalidIntLiteral,
-    UnclosedStringLiteral,
+    ExpectedInteger,
+    ExpectedIdentifier,
 }
 
-pub enum SintacticError {}
+#[derive(Debug, PartialEq)]
+pub enum SyntacticError {}
 
 // TODO: Semantic error

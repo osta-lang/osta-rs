@@ -1,4 +1,5 @@
 //! This module contains the fundamental combinators used through all the parsing pipeline
+#![allow(dead_code)]
 
 use regex::{Captures, Regex};
 
@@ -36,24 +37,29 @@ pub fn some<'a, Out1, Out2, Err1, Err2>(
     }
 }
 
-pub fn map<'a, In, Out, Err>(
+pub fn map<'a, In, Out, InErr, OutErr>(
+    parser: impl Parser<'a, In, InErr>,
+    out_f: impl Fn(In) -> Out,
+    err_f: impl Fn(InErr) -> OutErr,
+) -> impl Parser<'a, Out, OutErr> {
+    move |input| match parser.parse(input) {
+        Ok((result, rest)) => Ok((out_f(result), rest)),
+        Err(error) => Err(err_f(error)),
+    }
+}
+
+pub fn map_out<'a, In, Out, Err>(
     parser: impl Parser<'a, In, Err>,
     f: impl Fn(In) -> Out,
 ) -> impl Parser<'a, Out, Err> {
-    move |input| match parser.parse(input) {
-        Ok((result, rest)) => Ok((f(result), rest)),
-        Err(errors) => Err(errors),
-    }
+    map(parser, f, |err| err)
 }
 
 pub fn map_err<'a, Out, InErr, OutErr>(
     parser: impl Parser<'a, Out, InErr>,
     f: impl Fn(InErr) -> OutErr,
 ) -> impl Parser<'a, Out, OutErr> {
-    move |input| match parser.parse(input) {
-        Ok((result, rest)) => Ok((result, rest)),
-        Err(error) => Err(f(error)),
-    }
+    map(parser, |out| out, f)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,8 +147,8 @@ mod tests {
     }
 
     #[test]
-    fn test_map() {
-        let parser = map(literal("foo"), |_| 1);
+    fn test_map_out() {
+        let parser = map_out(literal("foo"), |_| 1);
         assert_eq!(parser.parse("foo"), Ok((1, "")));
         assert_eq!(
             parser.parse("bar"),

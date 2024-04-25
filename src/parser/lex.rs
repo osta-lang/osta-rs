@@ -1,16 +1,21 @@
-use crate::parser::error::ParseError;
+use crate::parser::error::LexError;
 use crate::parser::*;
+use crate::parser::combinators::{map, regex};
 
-pub fn integer_literal(input: &str) -> ParseResult<'_, i64, ParseError> {
-    todo!()
+#[allow(dead_code)]
+pub fn integer<'a>() -> impl Parser<'a, i64, LexError> {
+    map(
+        regex(r"^[0-9]+"),
+        |captures| captures.get(0).unwrap().as_str().parse().unwrap(),
+        |_| LexError::ExpectedInteger,
+    )
 }
 
-// DESIGN(cdecompilador): Should this really a &str?? or a Span?? or an allocated String??
-pub fn identifier(input: &str) -> ParseResult<'_, String, ParseError> {
-    todo!()
-}
-
-// DESIGN(cdecompilador): Should this really a &str?? or a Span?? or an allocated String??
-pub fn string_literal(input: &str) -> ParseResult<'_, String, ParseError> {
-    todo!()
+#[allow(dead_code)]
+pub fn identifier<'a>() -> impl Parser<'a, &'a str, LexError> {
+    map(
+        regex(r"^[a-zA-Z_][a-zA-Z0-9_]*"),
+        |captures| captures.get(0).unwrap().as_str(),
+        |_| LexError::ExpectedIdentifier,
+    )
 }
