@@ -23,18 +23,6 @@ pub fn pair<'a, Out1, Out2, Err1, Err2>(
     }
 }
 
-pub fn left<'a, Out1, Out2, Err1, Err2>(
-    parser: impl Parser<'a, (Out1, Out2), Either<Err1, Err2>>,
-) -> impl Parser<'a, Out1, Either<Err1, Err2>> {
-    map(parser, |(left, _)| left)
-}
-
-pub fn right<'a, Out1, Out2, Err1, Err2>(
-    parser: impl Parser<'a, (Out1, Out2), Either<Err1, Err2>>,
-) -> impl Parser<'a, Out2, Either<Err1, Err2>> {
-    map(parser, |(_, right)| right)
-}
-
 pub fn some<'a, Out1, Out2, Err1, Err2>(
     first: impl Parser<'a, Out1, Err1>,
     second: impl Parser<'a, Out2, Err2>,
