@@ -19,14 +19,53 @@ pub enum Either<L, R> {
     Right(R),
 }
 
-impl<S> Either<S, S> {
-    pub fn unwrap(self) -> S {
-        match self {
+macro_rules! _expand_right_match {
+    ($v:expr, $t:ty) => {
+        $v
+    };
+
+    ($v:expr, $t:ty, $($rest:ty),*) => {
+        match $v {
             Either::Left(v) => v,
-            Either::Right(v) => v,
+            Either::Right(v) => _expand_right_match!(v, $($rest),*),
         }
+    };
+}
+
+macro_rules! _either {
+    ($a:ident, $b:ident) => {
+        Either<$a, $b>
+    };
+    ($a:ident, $($rest:ident),*) => {
+        Either<$a, _either!($($rest),*)>
     }
 }
+
+macro_rules! expand_right {
+    ($t:ident, $($rest:ident),*) => {
+        impl<$t> _either!($t, $($rest),*) {
+            pub fn unwrap(self) -> S {
+                match self {
+                    Either::Left(v) => v,
+                    Either::Right(v) => _expand_right_match!(v, $($rest),*),
+                }
+            }
+        }
+    };
+}
+
+expand_right!(S, S);
+expand_right!(S, S, S);
+expand_right!(S, S, S, S);
+expand_right!(S, S, S, S, S);
+expand_right!(S, S, S, S, S, S);
+expand_right!(S, S, S, S, S, S, S);
+expand_right!(S, S, S, S, S, S, S, S);
+expand_right!(S, S, S, S, S, S, S, S, S);
+expand_right!(S, S, S, S, S, S, S, S, S, S);
+expand_right!(S, S, S, S, S, S, S, S, S, S, S);
+expand_right!(S, S, S, S, S, S, S, S, S, S, S, S);
+expand_right!(S, S, S, S, S, S, S, S, S, S, S, S, S);
 
 pub fn either<'a, Out1, Out2, Err1, Err2>(
     first: impl Parser<'a, Out1, Err1>,
@@ -102,9 +141,7 @@ pub fn defer<'a, Out, Err, P: Parser<'a, Out, Err> + Sized>(
     move |input| factory().parse(input)
 }
 
-pub fn optional<'a, Out, Err>(
-    parser: impl Parser<'a, Out, Err>,
-) -> impl Parser<'a, Option<Out>> {
+pub fn optional<'a, Out, Err>(parser: impl Parser<'a, Out, Err>) -> impl Parser<'a, Option<Out>> {
     move |input| match parser.parse(input) {
         Ok((result, rest)) => Ok((Some(result), rest)),
         Err(_) => Ok((None, input)),
@@ -166,7 +203,6 @@ pub fn regex<'a>(re_str: &'static str) -> impl Parser<'a, Captures<'a>, RegexErr
         }),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -246,9 +282,7 @@ mod tests {
         assert_eq!(parser.parse("foo"), Ok(("foo", "")));
         let parser = sequence!(literal("foo"), literal("bar"), literal("baz"));
         match parser.parse("foobarbaz") {
-            Ok(((a, (b, c)), rest)) => {
-
-            }
+            Ok(((a, (b, c)), rest)) => {}
             Err(ee) => match ee {
                 Either::Left(e) => {
                     println!("Left: {:?}", e);
@@ -260,10 +294,16 @@ mod tests {
                     Either::Right(e) => {
                         println!("Right Right: {:?}", e);
                     }
-                }
-            }
+                },
+            },
         }
         assert_eq!(parser.parse("foobarbaz"), Ok((("foo", ("bar", "baz")), "")));
-        assert_eq!(parser.parse("foobar"), Err(Either::Right(Either::Right(LiteralError { expected: "baz", found: "" }))));
+        assert_eq!(
+            parser.parse("foobar"),
+            Err(Either::Right(Either::Right(LiteralError {
+                expected: "baz",
+                found: ""
+            })))
+        );
     }
 }
