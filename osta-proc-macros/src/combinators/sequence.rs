@@ -88,7 +88,7 @@ pub fn sequence(input: TokenStream) -> TokenStream {
 
     let output = quote! {{
         let parser = #main_parser;
-        move |input: &'static str| {
+        move |input: &'a str| {
             match parser.parse(input) {
                 Ok((#recursive_view, rest)) => {
                     Ok(((#output_view), rest))

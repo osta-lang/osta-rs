@@ -262,7 +262,7 @@ mod tests {
     }
     
     #[test]
-    fn test_sequence() {
+    fn test_sequence<'a>() {
         let parser = sequence!(literal("foo"), literal("bar"), literal("baz"));
         assert_eq!(parser.parse("foobarbaz"), Ok((("foo", "bar", "baz"), "")));
         assert_eq!(parser.parse("barbaz"), Err(Either::Left(LiteralError { expected: "foo", found: "barbaz" })));
