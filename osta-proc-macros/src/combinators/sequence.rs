@@ -45,6 +45,12 @@ pub fn sequence(input: TokenStream) -> TokenStream {
 
     let len = parsers.len();
 
+    if len == 0 {
+        return quote! {
+            compile_error!("sequence! requires at least one parser");
+        }.into();
+    }
+
     // pair(parser0, pair(parser1, ...))
     let main_parser = parsers.into_iter()
         .enumerate()
@@ -57,6 +63,10 @@ pub fn sequence(input: TokenStream) -> TokenStream {
                 quote! { pair(#parser, #acc) }
             }
         });
+
+    if len < 3 {
+        return quote! { #main_parser }.into();
+    }
 
     // generate output identifiers
     let outputs = (0..len)
