@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::parser::combinators::{Either, map, either};
-use crate::parser::error::{LexError, ParseError};
+use crate::parser::error::ParseError;
 use crate::parser::lex::{identifier, integer};
 use crate::parser::Parser;
 
@@ -35,6 +35,7 @@ enum Expr<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::error::LexError;
     use super::*;
 
     #[test]
