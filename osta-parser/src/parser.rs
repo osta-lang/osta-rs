@@ -3,9 +3,9 @@ pub mod combinators;
 pub mod error;
 pub mod lex;
 
-pub type ParseResult<'a, Out, Err = Vec<error::ParseError>> = Result<(Out, &'a str), Err>;
+pub type ParseResult<'a, Out, Err = ()> = Result<(Out, &'a str), Err>;
 
-pub trait Parser<'a, Out, Err = Vec<error::ParseError>> {
+pub trait Parser<'a, Out, Err = ()> {
     fn parse(&self, input: &'a str) -> ParseResult<'a, Out, Err>;
 }
 

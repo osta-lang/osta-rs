@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::parser::combinators::{Either, map, some};
+use crate::parser::combinators::{Either, map, either};
 use crate::parser::error::{LexError, ParseError};
 use crate::parser::lex::{identifier, integer};
 use crate::parser::Parser;
@@ -13,7 +13,7 @@ enum Term<'a> {
 
 fn term<'a>() -> impl Parser<'a, Term<'a>, (ParseError, ParseError)> {
     map(
-        some(integer(), identifier()),
+        either(integer(), identifier()),
         |either| match either {
             Either::Left(int) => Term::Integer(int),
             Either::Right(ident) => Term::Identifier(ident),
@@ -23,6 +23,13 @@ fn term<'a>() -> impl Parser<'a, Term<'a>, (ParseError, ParseError)> {
             ParseError::LexError(ident_err),
         ),
     )
+}
+
+#[derive(Debug, PartialEq)]
+enum Expr<'a> {
+    Term(Term<'a>),
+    Add(Box<Expr<'a>>, Box<Expr<'a>>),
+    Mul(Box<Expr<'a>>, Box<Expr<'a>>),
 }
 
 
