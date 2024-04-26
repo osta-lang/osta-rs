@@ -4,6 +4,7 @@ use proc_macro::TokenStream;
 
 mod combinators;
 mod implementations;
+mod utils;
 
 #[proc_macro]
 pub fn sequence(input: TokenStream) -> TokenStream {

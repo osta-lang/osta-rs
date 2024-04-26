@@ -19,6 +19,7 @@
 use proc_macro::TokenStream;
 
 use quote::quote;
+use crate::utils::crate_utils::crate_accessor;
 
 struct Sequence {
     parsers: Vec<syn::Expr>,
@@ -51,16 +52,18 @@ pub fn sequence(input: TokenStream) -> TokenStream {
         }.into();
     }
 
+    let osta_parser_crate = crate_accessor("osta-parser");
+    let pair = quote! { #osta_parser_crate::parser::combinators::pair };
+
     // pair(parser0, pair(parser1, ...))
     let main_parser = parsers.into_iter()
         .enumerate()
         .rev()
         .fold(quote! { _ }, |acc, (i, parser)| {
-            let parser = quote! { #parser };
             if i == len - 1 {
                 quote! { #parser }
             } else {
-                quote! { pair(#parser, #acc) }
+                quote! { #pair(#parser, #acc) }
             }
         });
 
