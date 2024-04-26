@@ -80,20 +80,6 @@ pub fn map_err<'a, Out, InErr, OutErr>(
 }
 
 // =============================================================================
-// Combinators for sequences
-// =============================================================================
-
-#[deprecated(note = "Use the `sequence!` macro instead")]
-macro_rules! recursive_pair {
-    ($e:expr) => {
-        $e
-    };
-    ($e:expr, $($rest:expr),+) => {
-        pair($e, recursive_pair!($($rest),+))
-    };
-}
-
-// =============================================================================
 // Utility combinators
 // =============================================================================
 
@@ -242,35 +228,7 @@ mod tests {
             Ok(("foo", "bar"))
         );
     }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_recursive_pair() {
-        let parser = recursive_pair!(literal("foo"));
-        assert_eq!(parser.parse("foo"), Ok(("foo", "")));
-        let parser = recursive_pair!(literal("foo"), literal("bar"), literal("baz"));
-        match parser.parse("foobarbaz") {
-            Ok(((a, (b, c)), rest)) => {
-
-            }
-            Err(ee) => match ee {
-                Either::Left(e) => {
-                    println!("Left: {:?}", e);
-                }
-                Either::Right(ee) => match ee {
-                    Either::Left(e) => {
-                        println!("Right Left: {:?}", e);
-                    }
-                    Either::Right(e) => {
-                        println!("Right Right: {:?}", e);
-                    }
-                }
-            }
-        }
-        assert_eq!(parser.parse("foobarbaz"), Ok((("foo", ("bar", "baz")), "")));
-        assert_eq!(parser.parse("foobar"), Err(Either::Right(Either::Right(LiteralError { expected: "baz", found: "" }))));
-    }
-
+    
     #[test]
     fn test_sequence() {
         let parser = sequence!(literal("foo"), literal("bar"), literal("baz"));
