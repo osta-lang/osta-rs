@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use regex::{Captures, Regex};
+use osta_proc_macros::impl_either_unwrap;
 
 use super::*;
 
@@ -15,53 +16,7 @@ pub enum Either<L, R> {
     Right(R),
 }
 
-macro_rules! _expand_right_match {
-    ($v:expr, $t:ty) => {
-        $v
-    };
-
-    ($v:expr, $t:ty, $($rest:ty),*) => {
-        match $v {
-            Either::Left(v) => v,
-            Either::Right(v) => _expand_right_match!(v, $($rest),*),
-        }
-    };
-}
-
-macro_rules! _either {
-    ($a:ident, $b:ident) => {
-        Either<$a, $b>
-    };
-    ($a:ident, $($rest:ident),*) => {
-        Either<$a, _either!($($rest),*)>
-    }
-}
-
-macro_rules! expand_right {
-    ($t:ident, $($rest:ident),*) => {
-        impl<$t> _either!($t, $($rest),*) {
-            pub fn unwrap(self) -> S {
-                match self {
-                    Either::Left(v) => v,
-                    Either::Right(v) => _expand_right_match!(v, $($rest),*),
-                }
-            }
-        }
-    };
-}
-
-expand_right!(S, S);
-expand_right!(S, S, S);
-expand_right!(S, S, S, S);
-expand_right!(S, S, S, S, S);
-expand_right!(S, S, S, S, S, S);
-expand_right!(S, S, S, S, S, S, S);
-expand_right!(S, S, S, S, S, S, S, S);
-expand_right!(S, S, S, S, S, S, S, S, S);
-expand_right!(S, S, S, S, S, S, S, S, S, S);
-expand_right!(S, S, S, S, S, S, S, S, S, S, S);
-expand_right!(S, S, S, S, S, S, S, S, S, S, S, S);
-expand_right!(S, S, S, S, S, S, S, S, S, S, S, S, S);
+impl_either_unwrap!(3);
 
 pub fn either<'a, Out1, Out2, Err1, Err2>(
     first: impl Parser<'a, Out1, Err1>,
@@ -193,6 +148,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_either_unwrap() {
+        let either: Either<i32, Either<i32, i32>> = Either::Right(Either::Left(1));
+        assert_eq!(either.unwrap(), 1);
+    }
+
+    #[test]
+    fn test_either() {
+        let parser = either(literal("foo"), literal("bar"));
+        assert_eq!(parser.parse("foo"), Ok((Either::Left("foo"), "")));
+        assert_eq!(parser.parse("bar"), Ok((Either::Right("bar"), "")));
+        assert_eq!(
+            parser.parse("baz"),
+            Err((
+                LiteralError {
+                    found: "baz",
+                    expected: "foo"
+                },
+                LiteralError {
+                    found: "baz",
+                    expected: "bar"
+                }
+            ))
+        );
+    }
+
+    #[test]
     fn test_pair() {
         let parser = pair(literal("foo"), literal("bar"));
         assert_eq!(parser.parse("foobar"), Ok((("foo", "bar"), "")));
@@ -210,26 +191,6 @@ mod tests {
                 found: "bar",
                 expected: "foo"
             }))
-        );
-    }
-
-    #[test]
-    fn test_some() {
-        let parser = either(literal("foo"), literal("bar"));
-        assert_eq!(parser.parse("foo"), Ok((Either::Left("foo"), "")));
-        assert_eq!(parser.parse("bar"), Ok((Either::Right("bar"), "")));
-        assert_eq!(
-            parser.parse("baz"),
-            Err((
-                LiteralError {
-                    found: "baz",
-                    expected: "foo"
-                },
-                LiteralError {
-                    found: "baz",
-                    expected: "bar"
-                }
-            ))
         );
     }
 
