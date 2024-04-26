@@ -189,7 +189,7 @@ pub fn regex<'a>(re_str: &'static str) -> impl Parser<'a, Captures<'a>, RegexErr
 
 #[cfg(test)]
 mod tests {
-    use osta_macros::sequence;
+    use osta_proc_macros::sequence;
     use super::*;
 
     #[test]
