@@ -58,28 +58,28 @@ pub fn sequence(input: TokenStream) -> TokenStream {
             }
         });
 
-    // (output0, (output1, ...))
-    let recursive_view = (0..len)
+    // generate output identifiers
+    let outputs = (0..len)
         .map(|i| format!("output{}", i))
         .map(|ident_name| syn::Ident::new(&ident_name, proc_macro2::Span::call_site()))
         .enumerate()
         .rev()
-        .fold(quote! { _ }, |acc, (i, iden)| {
-            if i == len - 1 {
-                quote! { #iden }
+        .collect::<Vec<_>>();
+
+    // (output0, (output1, ...))
+    let recursive_view = outputs.iter()
+        .fold(quote! { _ }, |acc, (i, ident)| {
+            if *i == len - 1 {
+                quote! { #ident }
             } else {
-                quote! { (#iden, #acc) }
+                quote! { (#ident, #acc) }
             }
         });
 
     // output0, output1, ...
-    let output_view = (0..len)
-        .map(|i| format!("output{}", i))
-        .map(|ident_name| syn::Ident::new(&ident_name, proc_macro2::Span::call_site()))
-        .enumerate()
-        .rev()
+    let output_view = outputs.iter()
         .fold(quote! { _ }, |acc, (i, ident)| {
-            if i == len - 1 {
+            if *i == len - 1 {
                 quote! { #ident }
             } else {
                 quote! { #ident, #acc }
