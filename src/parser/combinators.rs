@@ -11,6 +11,15 @@ pub enum Either<L, R> {
     Right(R),
 }
 
+impl<S> Either<S, S> {
+    pub fn unwrap(self) -> S {
+        match self {
+            Either::Left(v) => v,
+            Either::Right(v) => v,
+        }
+    }
+}
+
 pub fn pair<'a, Out1, Out2, Err1, Err2>(
     first: impl Parser<'a, Out1, Err1>,
     second: impl Parser<'a, Out2, Err2>,
@@ -78,6 +87,19 @@ pub fn literal<'a>(literal: &'static str) -> impl Parser<'a, &'static str, Liter
                 found: input,
             })
         }
+    }
+}
+
+pub fn skip_whitespace<'a, Out, Err>(
+    parser: impl Parser<'a, Out, Err>,
+) -> impl Parser<'a, Out, Err> {
+    move |mut input: &'a str| {
+        while let Some(rest) = input.strip_prefix(|c: char| c.is_whitespace() || c.is_control()) {
+            input = rest;
+        }
+        let (result, rest) = parser.parse(input)?;
+
+        Ok((result, rest))
     }
 }
 
@@ -164,5 +186,13 @@ mod tests {
         let parser = map_err(literal("foo"), |_| 1);
         assert_eq!(parser.parse("foo"), Ok(("foo", "")));
         assert_eq!(parser.parse("bar"), Err(1));
+    }
+
+    #[test]
+    fn test_skip_whitespace() {
+        assert_eq!(
+            skip_whitespace(literal("foo")).parse(" \x0a \t\r\nfoobar"),
+            Ok(("foo", "bar"))
+        );
     }
 }
