@@ -9,10 +9,6 @@ use super::*;
 // Base combinators
 // =============================================================================
 
-pub fn empty() -> impl Parser<'static, (), ()> {
-    move |input| Ok(((), input))
-}
-
 #[derive(Debug, PartialEq)]
 pub enum Either<L, R> {
     Left(L),
