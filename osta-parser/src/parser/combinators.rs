@@ -44,6 +44,18 @@ pub fn pair<'a, Out1, Out2, Err1, Err2>(
     }
 }
 
+pub fn first<'a, Out1, Out2, Err>(
+    parser: impl Parser<'a, (Out1, Out2), Err>,
+) -> impl Parser<'a, Out1, Err> {
+    move |input| parser.parse(input).map(|((result, _), rest)| (result, rest))
+}
+
+pub fn second<'a, Out1, Out2, Err>(
+    parser: impl Parser<'a, (Out1, Out2), Err>,
+) -> impl Parser<'a, Out2, Err> {
+    move |input| parser.parse(input).map(|((_, result), rest)| (result, rest))
+}
+
 pub fn map<'a, In, Out, InErr, OutErr>(
     parser: impl Parser<'a, In, InErr>,
     out_f: impl Fn(In) -> Out,
@@ -51,7 +63,7 @@ pub fn map<'a, In, Out, InErr, OutErr>(
 ) -> impl Parser<'a, Out, OutErr> {
     move |input| match parser.parse(input) {
         Ok((result, rest)) => Ok((out_f(result), rest)),
-        Err(error) => Err(err_f(error)),
+        Err(err) => Err(err_f(err)),
     }
 }
 
@@ -59,14 +71,27 @@ pub fn map_out<'a, In, Out, Err>(
     parser: impl Parser<'a, In, Err>,
     f: impl Fn(In) -> Out,
 ) -> impl Parser<'a, Out, Err> {
-    map(parser, f, |err| err)
+    move |input| parser.parse(input).map(|(result, rest)| (f(result), rest))
 }
 
 pub fn map_err<'a, Out, InErr, OutErr>(
     parser: impl Parser<'a, Out, InErr>,
     f: impl Fn(InErr) -> OutErr,
 ) -> impl Parser<'a, Out, OutErr> {
-    map(parser, |out| out, f)
+    move |input| parser.parse(input).map_err(|err| f(err))
+}
+
+pub fn and_then<'a, P, In, Out, InErr, OutErr>(
+    parser: impl Parser<'a, In, InErr>,
+    f: impl Fn(In) -> P,
+) -> impl Parser<'a, Out, Either<InErr, OutErr>>
+where
+    P: Parser<'a, Out, OutErr>,
+{
+    move |input| match parser.parse(input) {
+        Ok((result, rest)) => f(result).parse(rest).map_err(Either::Right),
+        Err(err) => Err(Either::Left(err)),
+    }
 }
 
 // =============================================================================
@@ -195,6 +220,48 @@ mod tests {
     }
 
     #[test]
+    fn test_first() {
+        let parser = first(pair(literal("foo"), literal("bar")));
+        assert_eq!(parser.parse("foobar"), Ok(("foo", "")));
+        assert_eq!(parser.parse("foobarbaz"), Ok(("foo", "baz")));
+        assert_eq!(
+            parser.parse("foo"),
+            Err(Either::Right(LiteralError {
+                found: "",
+                expected: "bar"
+            }))
+        );
+        assert_eq!(
+            parser.parse("bar"),
+            Err(Either::Left(LiteralError {
+                found: "bar",
+                expected: "foo"
+            }))
+        );
+    }
+
+    #[test]
+    fn test_second() {
+        let parser = second(pair(literal("foo"), literal("bar")));
+        assert_eq!(parser.parse("foobar"), Ok(("bar", "")));
+        assert_eq!(parser.parse("foobarbaz"), Ok(("bar", "baz")));
+        assert_eq!(
+            parser.parse("foo"),
+            Err(Either::Right(LiteralError {
+                found: "",
+                expected: "bar"
+            }))
+        );
+        assert_eq!(
+            parser.parse("bar"),
+            Err(Either::Left(LiteralError {
+                found: "bar",
+                expected: "foo"
+            }))
+        );
+    }
+
+    #[test]
     fn test_map_out() {
         let parser = map_out(literal("foo"), |_| 1);
         assert_eq!(parser.parse("foo"), Ok((1, "")));
@@ -215,13 +282,46 @@ mod tests {
     }
 
     #[test]
+    fn test_and_then() {
+        let parser = and_then(literal("foo"), |_| literal("bar"));
+        assert_eq!(parser.parse("foobar"), Ok(("bar", "")));
+        assert_eq!(
+            parser.parse("foo"),
+            Err(Either::Right(LiteralError {
+                found: "",
+                expected: "bar"
+            }))
+        );
+        assert_eq!(
+            parser.parse("bar"),
+            Err(Either::Left(LiteralError {
+                found: "bar",
+                expected: "foo"
+            }))
+        );
+    }
+
+    #[test]
+    fn test_defer() {
+        let parser = defer(|| literal("foo"));
+        assert_eq!(parser.parse("foo"), Ok(("foo", "")));
+    }
+
+    #[test]
+    fn test_optional() {
+        let parser = optional(literal("foo"));
+        assert_eq!(parser.parse("foo"), Ok((Some("foo"), "")));
+        assert_eq!(parser.parse("bar"), Ok((None, "bar")));
+    }
+
+    #[test]
     fn test_skip_whitespace() {
         assert_eq!(
             skip_whitespace(literal("foo")).parse(" \x0a \t\r\nfoobar"),
             Ok(("foo", "bar"))
         );
     }
-    
+
     #[test]
     fn test_sequence<'a>() {
         let parser = sequence!(literal("foo"), literal("bar"), literal("baz"));
