@@ -53,7 +53,7 @@ pub fn sequence(input: TokenStream) -> TokenStream {
     }
 
     let osta_parser_crate = crate_accessor("osta-parser");
-    let pair = quote! { #osta_parser_crate::parser::combinators::pair };
+    let pair = quote! { #osta_parser_crate::parser::pair };
 
     // pair(parser0, pair(parser1, ...))
     let main_parser = parsers.into_iter()

@@ -5,6 +5,19 @@ use crate::parser::error::ParseError;
 use crate::parser::lex::{identifier, integer};
 use crate::parser::Parser;
 
+pub type NodeRef = u32;
+
+pub struct Node<'a> {
+    parent: NodeRef,
+    children: &'a [NodeRef],
+}
+
+pub struct Tree<'a> {
+    nodes: Vec<Node<'a>>,
+    node_data: Vec<NodeRef>,
+}
+
+/*
 #[derive(Debug, PartialEq)]
 enum Term<'a> {
     Integer(i64),
@@ -54,3 +67,4 @@ mod tests {
         );
     }
 }
+*/
