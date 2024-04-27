@@ -10,6 +10,11 @@ use super::*;
 // Base combinators
 // =============================================================================
 
+pub trait BiWrapper<L, R> {
+    fn unwrap_left(self) -> Result<L, ()>;
+    fn unwrap_right(self) -> Result<R, ()>;
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Either<L, R> {
     Left(L),
@@ -17,6 +22,32 @@ pub enum Either<L, R> {
 }
 
 impl_either_unwrap!(3);
+
+impl<L, R> BiWrapper<L, R> for Either<L, R> {
+    fn unwrap_left(self) -> Result<L, ()> {
+        match self {
+            Either::Left(l) => Ok(l),
+            Either::Right(_) => Err(()),
+        }
+    }
+
+    fn unwrap_right(self) -> Result<R, ()> {
+        match self {
+            Either::Left(_) => Err(()),
+            Either::Right(r) => Ok(r),
+        }
+    }
+}
+
+impl<L, R> BiWrapper<L, R> for (L, R) {
+    fn unwrap_left(self) -> Result<L, ()> {
+        Ok(self.0)
+    }
+
+    fn unwrap_right(self) -> Result<R, ()> {
+        Ok(self.1)
+    }
+}
 
 pub fn either<'a, Out1, Out2, Err1, Err2>(
     first: impl Parser<'a, Out1, Err1>,
@@ -44,16 +75,22 @@ pub fn pair<'a, Out1, Out2, Err1, Err2>(
     }
 }
 
-pub fn first<'a, Out1, Out2, Err>(
-    parser: impl Parser<'a, (Out1, Out2), Err>,
-) -> impl Parser<'a, Out1, Err> {
-    move |input| parser.parse(input).map(|((result, _), rest)| (result, rest))
+pub fn left<'a, B, Out1, Out2, Err>(
+    parser: impl Parser<'a, B, Err>,
+) -> impl Parser<'a, Out1, Either<Err, ()>>
+where
+    B: BiWrapper<Out1, Out2>,
+{
+    flatten_result(map_out(parser, |result| result.unwrap_left()))
 }
 
-pub fn second<'a, Out1, Out2, Err>(
-    parser: impl Parser<'a, (Out1, Out2), Err>,
-) -> impl Parser<'a, Out2, Err> {
-    move |input| parser.parse(input).map(|((_, result), rest)| (result, rest))
+pub fn right<'a, A, Out1, Out2, Err>(
+    parser: impl Parser<'a, A, Err>,
+) -> impl Parser<'a, Out2, Either<Err, ()>>
+where
+    A: BiWrapper<Out1, Out2>,
+{
+    flatten_result(map_out(parser, |result| result.unwrap_right()))
 }
 
 pub fn map<'a, In, Out, InErr, OutErr>(
@@ -130,10 +167,20 @@ pub fn many<'a, Out: 'a, Err: 'a>(
 // Utility combinators
 // =============================================================================
 
+pub fn flatten_result<'a, Out, Err1, Err2>(
+    parser: impl Parser<'a, Result<Out, Err2>, Err1>,
+) -> impl Parser<'a, Out, Either<Err1, Err2>> {
+    move |input| match parser.parse(input) {
+        Ok((Ok(result), rest)) => Ok((result, rest)),
+        Ok((Err(err), _)) => Err(Either::Right(err)),
+        Err(err) => Err(Either::Left(err)),
+    }
+}
+
 pub fn boxed<'a, Out, Err>(
     parser: impl Parser<'a, Out, Err> + 'a,
-) -> BoxedParser<'a, Out, Err> {
-    BoxedParser::from(Box::new(parser))
+) -> SharedParser<'a, Out, Err> {
+    SharedParser::from(std::rc::Rc::new(parser))
 }
 
 pub fn defer<'a, Out, Err, P: Parser<'a, Out, Err> + Sized>(
@@ -260,44 +307,44 @@ mod tests {
     }
 
     #[test]
-    fn test_first() {
-        let parser = first(pair(literal("foo"), literal("bar")));
+    fn test_left() {
+        let parser = left(pair(literal("foo"), literal("bar")));
         assert_eq!(parser.parse("foobar"), Ok(("foo", "")));
         assert_eq!(parser.parse("foobarbaz"), Ok(("foo", "baz")));
         assert_eq!(
             parser.parse("foo"),
-            Err(Either::Right(LiteralError {
+            Err(Either::Left(Either::Right(LiteralError {
                 found: "",
                 expected: "bar"
-            }))
+            })))
         );
         assert_eq!(
             parser.parse("bar"),
-            Err(Either::Left(LiteralError {
+            Err(Either::Left(Either::Left(LiteralError {
                 found: "bar",
                 expected: "foo"
-            }))
+            })))
         );
     }
 
     #[test]
-    fn test_second() {
-        let parser = second(pair(literal("foo"), literal("bar")));
+    fn test_right() {
+        let parser = right(pair(literal("foo"), literal("bar")));
         assert_eq!(parser.parse("foobar"), Ok(("bar", "")));
         assert_eq!(parser.parse("foobarbaz"), Ok(("bar", "baz")));
         assert_eq!(
             parser.parse("foo"),
-            Err(Either::Right(LiteralError {
+            Err(Either::Left(Either::Right(LiteralError {
                 found: "",
                 expected: "bar"
-            }))
+            })))
         );
         assert_eq!(
             parser.parse("bar"),
-            Err(Either::Left(LiteralError {
+            Err(Either::Left(Either::Left(LiteralError {
                 found: "bar",
                 expected: "foo"
-            }))
+            })))
         );
     }
 
