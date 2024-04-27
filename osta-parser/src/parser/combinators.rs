@@ -94,9 +94,47 @@ where
     }
 }
 
+pub fn some<'a, Out: 'a, Err: 'a>(
+    parser: impl Parser<'a, Out, Err> + 'a,
+) -> impl Parser<'a, Vec<Out>, Err> {
+    let parser_rc = std::rc::Rc::new(parser);
+    boxed(map(
+        pair(
+            parser_rc.clone(),
+            optional(either(parser_rc.clone(), defer(move || some(parser_rc.clone())))),
+        ),
+        |(first, second)| match second {
+            Some(either) => match either {
+                Either::Left(second) => vec![first, second],
+                Either::Right(second) => {
+                    let mut vec = vec![first];
+                    vec.extend(second);
+                    vec
+                }
+            },
+            None => vec![first],
+        }, |err| match err {
+            Either::Left(err) => err,
+            Either::Right(_) => unreachable!(),
+        }
+    ))
+}
+
+pub fn many<'a, Out: 'a, Err: 'a>(
+    parser: impl Parser<'a, Out, Err> + 'a,
+) -> impl Parser<'a, Vec<Out>, Err> {
+    map_out(optional(some(parser)), |opt| opt.unwrap_or_default())
+}
+
 // =============================================================================
 // Utility combinators
 // =============================================================================
+
+pub fn boxed<'a, Out, Err>(
+    parser: impl Parser<'a, Out, Err> + 'a,
+) -> BoxedParser<'a, Out, Err> {
+    BoxedParser::from(Box::new(parser))
+}
 
 pub fn defer<'a, Out, Err, P: Parser<'a, Out, Err> + Sized>(
     factory: impl Fn() -> P,
@@ -104,7 +142,9 @@ pub fn defer<'a, Out, Err, P: Parser<'a, Out, Err> + Sized>(
     move |input| factory().parse(input)
 }
 
-pub fn optional<'a, Out, Err>(parser: impl Parser<'a, Out, Err>) -> impl Parser<'a, Option<Out>> {
+pub fn optional<'a, Out, Err>(
+    parser: impl Parser<'a, Out, Err>,
+) -> impl Parser<'a, Option<Out>, Err> {
     move |input| match parser.parse(input) {
         Ok((result, rest)) => Ok((Some(result), rest)),
         Err(_) => Ok((None, input)),
