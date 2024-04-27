@@ -29,6 +29,21 @@ pub trait Parser<'a, Out, Err = ()>: Sized {
             marker: std::marker::PhantomData::default(),
         }
     }
+
+    fn and_then<P, F, NewOut, NewErr>(
+        self,
+        and_then_fn: F,
+    ) -> AndThen<'a, Self, P, F, Out, NewOut, Err, NewErr>
+    where
+        P: Parser<'a, NewOut, NewErr>,
+        F: Fn(Out) -> P,
+    {
+        AndThen {
+            inner: self,
+            and_then_fn,
+            marker: std::marker::PhantomData::default(),
+        }
+    }
 }
 
 impl<'a, F, Out, Err> Parser<'a, Out, Err> for F
@@ -42,17 +57,17 @@ where
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LiteralError<'a> {
-    pub expected: &'static str,
+    pub expected: &'a str,
     pub found: &'a str,
 }
 
 #[derive(Clone, Copy)]
-pub struct LiteralParser {
-    to_match: &'static str,
+pub struct LiteralParser<'a> {
+    to_match: &'a str,
 }
 
-impl<'a> Parser<'a, &'static str, LiteralError<'a>> for LiteralParser {
-    fn parse(&self, input: &'a str) -> ParseResult<'a, &'static str, LiteralError<'a>> {
+impl<'a> Parser<'a, &'a str, LiteralError<'a>> for LiteralParser<'a> {
+    fn parse(&self, input: &'a str) -> ParseResult<'a, &'a str, LiteralError<'a>> {
         if let Some(rest) = input.strip_prefix(self.to_match) {
             Ok((self.to_match, rest))
         } else {
@@ -62,6 +77,10 @@ impl<'a> Parser<'a, &'static str, LiteralError<'a>> for LiteralParser {
             })
         }
     }
+}
+
+pub fn literal<'a>(to_match: &'a str) -> LiteralParser<'a> {
+    LiteralParser { to_match }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -124,6 +143,14 @@ where
     }
 }
 
+pub fn either<'a, P1, P2, Out1, Out2, Err1, Err2>(left: P1, right: P2) -> EitherParser<P1, P2>
+where
+    P1: Parser<'a, Out1, Err1>,
+    P2: Parser<'a, Out2, Err2>,
+{
+    EitherParser { left, right }
+}
+
 #[derive(Clone, Copy)]
 pub struct MapOutParser<'a, P, Out, NewOut, Err, F>
 where
@@ -171,6 +198,35 @@ where
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct AndThen<'a, P, NewP, F, Out, NewOut, Err, NewErr>
+where
+    NewP: Parser<'a, NewOut, NewErr>,
+    P: Parser<'a, Out, Err>,
+    F: Fn(Out) -> NewP,
+{
+    inner: P,
+    and_then_fn: F,
+    marker: std::marker::PhantomData<&'a (NewP, Out, NewOut, Err, NewErr)>,
+}
+
+impl<'a, P, NewP, F, Out, NewOut, Err, NewErr> Parser<'a, NewOut, Either<Err, NewErr>>
+    for AndThen<'a, P, NewP, F, Out, NewOut, Err, NewErr>
+where
+    NewP: Parser<'a, NewOut, NewErr>,
+    P: Parser<'a, Out, Err>,
+    F: Fn(Out) -> NewP,
+{
+    fn parse(&self, input: &'a str) -> ParseResult<'a, NewOut, Either<Err, NewErr>> {
+        match self.inner.parse(input) {
+            Ok((result, rest)) => (self.and_then_fn)(result)
+                .parse(rest)
+                .map_err(Either::Right),
+            Err(err) => Err(Either::Left(err)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,43 +234,35 @@ mod tests {
     #[test]
     fn it_works<'a>() {
         assert_eq!(
-            PairParser {
-                left: LiteralParser { to_match: "foo" },
-                right: LiteralParser { to_match: "bar" },
-            }
-            .parse("foobar"),
+            pair(literal("foo"), literal("bar")).parse("foobar"),
             Ok((("foo", "bar"), ""))
         );
 
-        let p = EitherParser {
-            left: LiteralParser { to_match: "foo" },
-            right: LiteralParser { to_match: "bar" },
-        };
+        let p = either(literal("foo"), literal("bar"));
         assert_eq!(p.parse("foo"), Ok((Either::Left("foo"), "")));
         assert_eq!(p.parse("bar"), Ok((Either::Right("bar"), "")));
 
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         struct Foo;
-        let p = MapOutParser {
-            inner: p,
-            map_fn: |_| Foo,
-            marker: std::marker::PhantomData::default(),
-        };
+        let p = p.map(|_| Foo);
         assert_eq!(p.parse("foo"), Ok((Foo, "")));
 
         assert_eq!(
-            LiteralParser { to_match: "foo" }.map(|_| Foo).parse("foo"),
-            Ok((Foo, ""))
-        );
-
-        assert_eq!(
-            (move |input| { LiteralParser { to_match: "foo" }.parse(input) }).parse("foo"),
+            (move |input| { literal("foo").parse(input) }).parse("foo"),
             Ok(("foo", ""))
         );
 
         assert_eq!(
             osta_proc_macros::sequence!(p, p, p).parse("foobarfoo"),
             Ok(((Foo, Foo, Foo), ""))
+        );
+
+        assert_eq!(
+            literal("foo")
+                .and_then(|s| literal(s))
+                .map(|_| Foo)
+                .parse("foofoo"),
+            Ok((Foo, ""))
         )
     }
 }
