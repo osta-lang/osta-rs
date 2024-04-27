@@ -86,6 +86,19 @@ pub fn optional<'a, Out, Err>(parser: impl Parser<'a, Out, Err>) -> impl Parser<
     }
 }
 
+pub fn skip_whitespace<'a, Out, Err>(
+    parser: impl Parser<'a, Out, Err>,
+) -> impl Parser<'a, Out, Err> {
+    move |mut input: &'a str| {
+        while let Some(rest) = input.strip_prefix(|c: char| c.is_whitespace() || c.is_control()) {
+            input = rest;
+        }
+        let (result, rest) = parser.parse(input)?;
+
+        Ok((result, rest))
+    }
+}
+
 // =============================================================================
 // Basic parsers
 // =============================================================================
@@ -106,19 +119,6 @@ pub fn literal<'a>(literal: &'static str) -> impl Parser<'a, &'static str, Liter
                 found: input,
             })
         }
-    }
-}
-
-pub fn skip_whitespace<'a, Out, Err>(
-    parser: impl Parser<'a, Out, Err>,
-) -> impl Parser<'a, Out, Err> {
-    move |mut input: &'a str| {
-        while let Some(rest) = input.strip_prefix(|c: char| c.is_whitespace() || c.is_control()) {
-            input = rest;
-        }
-        let (result, rest) = parser.parse(input)?;
-
-        Ok((result, rest))
     }
 }
 
