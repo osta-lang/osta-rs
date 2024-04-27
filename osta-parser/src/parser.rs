@@ -227,6 +227,21 @@ where
     }
 }
 
+pub fn defer<'a, Out, Err, P: Parser<'a, Out, Err>>(
+    factory: impl Fn() -> P,
+) -> impl Parser<'a, Out, Err> {
+    move |input| factory().parse(input)
+}
+
+pub fn optional<'a, Out, Err>(
+    parser: impl Parser<'a, Out, Err>,
+) -> impl Parser<'a, Option<Out>, Err> {
+    move |input| match parser.parse(input) {
+        Ok((result, rest)) => Ok((Some(result), rest)),
+        Err(_) => Ok((None, input)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +278,10 @@ mod tests {
                 .map(|_| Foo)
                 .parse("foofoo"),
             Ok((Foo, ""))
-        )
+        );
+
+        let p = optional(literal("foo"));
+        assert_eq!(p.parse("foobar"), Ok((Some("foo"), "bar")));
+        assert_eq!(p.parse("barfoo"), Ok((None, "barfoo")));
     }
 }
