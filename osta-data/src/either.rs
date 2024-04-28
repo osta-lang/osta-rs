@@ -5,7 +5,7 @@ pub enum Either<L, R> {
     Right(R),
 }
 
-impl_either_unwrap!(10);
+impl_either_unwrap!(20);
 
 #[cfg(test)]
 mod tests {
