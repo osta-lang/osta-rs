@@ -1,2 +1,2 @@
-mod monads;
-mod combinators;
+pub mod monads;
+pub mod combinators;
