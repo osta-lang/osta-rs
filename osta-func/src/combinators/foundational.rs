@@ -1,7 +1,10 @@
 use crate::monads::fallible_state_monad::FallibleStateMonad;
 use crate::monads::state_monad::StateMonad;
 
-pub fn pair<'a, M1, M2, In: 'a, Out1: Copy + 'a, Out2: 'a>(left: M1, right: M2) -> impl StateMonad<'a, In, (Out1, Out2)>
+pub fn pair<'a, M1, M2, In: 'a, Out1: Copy + 'a, Out2: 'a>(
+    left: M1,
+    right: M2
+) -> impl StateMonad<'a, In, (Out1, Out2)>
 where
     M1: StateMonad<'a, In, Out1>,
     M2: StateMonad<'a, In, Out2>,
@@ -10,8 +13,8 @@ where
 }
 
 pub fn optional<'a, M, In: 'a, Out: 'a, Err: 'a>(monad: M) -> impl StateMonad<'a, In, Option<Out>>
-    where
-        M: FallibleStateMonad<'a, In, Out, Err>,
+where
+    M: FallibleStateMonad<'a, In, Out, Err>,
 {
     monad
         .map_out(Some)

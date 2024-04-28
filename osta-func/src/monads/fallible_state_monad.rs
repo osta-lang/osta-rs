@@ -2,24 +2,33 @@ use osta_data::either::Either;
 use crate::monads::state_monad::StateMonad;
 
 pub trait FallibleStateMonad<'a, In: 'a, Out: 'a, Err: 'a>: StateMonad<'a, In, Result<Out, Err>> {
-    fn map_out<NewOut: 'a, F>(self, map_fn: F) -> impl FallibleStateMonad<'a, In, NewOut, Err>
-        where
-            F: FnOnce(Out) -> NewOut + Copy + 'a
-    {
-        self.map(move |result| result.map(map_fn))
-    }
+    fn map_out<NewOut: 'a, F>(
+        self,
+        map_fn: F
+    ) -> impl FallibleStateMonad<'a, In, NewOut, Err>
+    where
+        F: FnOnce(Out) -> NewOut + Copy + 'a
+{
+    self.map(move |result| result.map(map_fn))
+}
 
-    fn map_err<NewErr: 'a, F>(self, map_fn: F) -> impl FallibleStateMonad<'a, In, Out, NewErr>
-        where
-            F: FnOnce(Err) -> NewErr + Copy + 'a
-    {
-        self.map(move |result| result.map_err(map_fn))
-    }
+    fn map_err<NewErr: 'a, F>(
+        self,
+        map_fn: F
+    ) -> impl FallibleStateMonad<'a, In, Out, NewErr>
+    where
+        F: FnOnce(Err) -> NewErr + Copy + 'a
+{
+    self.map(move |result| result.map_err(map_fn))
+}
 
-    fn and_then<P, F, NewOut: 'a, OtherErr: 'a>(self, and_then_fn: F) -> impl FallibleStateMonad<'a, In, NewOut, Either<Err, OtherErr>>
-        where
-            P: FallibleStateMonad<'a, In, NewOut, OtherErr>,
-            F: FnOnce(Out) -> P + Copy + 'a
+    fn and_then<P, F, NewOut: 'a, OtherErr: 'a>(
+        self,
+        and_then_fn: F
+    ) -> impl FallibleStateMonad<'a, In, NewOut, Either<Err, OtherErr>>
+    where
+        P: FallibleStateMonad<'a, In, NewOut, OtherErr>,
+        F: FnOnce(Out) -> P + Copy + 'a
     {
         move |input| {
             let (result, rest) = self.apply(input);
@@ -30,10 +39,13 @@ pub trait FallibleStateMonad<'a, In: 'a, Out: 'a, Err: 'a>: StateMonad<'a, In, R
         }
     }
 
-    fn or_else<P, F, OtherOut: 'a, NewErr: 'a>(self, or_else_fn: F) -> impl FallibleStateMonad<'a, In, Either<Out, OtherOut>, NewErr>
-        where
-            P: FallibleStateMonad<'a, In, OtherOut, NewErr>,
-            F: FnOnce(Err) -> P + Copy + 'a
+    fn or_else<P, F, OtherOut: 'a, NewErr: 'a>(
+        self,
+        or_else_fn: F
+    ) -> impl FallibleStateMonad<'a, In, Either<Out, OtherOut>, NewErr>
+    where
+        P: FallibleStateMonad<'a, In, OtherOut, NewErr>,
+        F: FnOnce(Err) -> P + Copy + 'a
     {
         move |input| {
             let (result, rest) = self.apply(input);
@@ -46,8 +58,8 @@ pub trait FallibleStateMonad<'a, In: 'a, Out: 'a, Err: 'a>: StateMonad<'a, In, R
 }
 
 impl<'a, In: 'a, Out: 'a, Err: 'a, M> FallibleStateMonad<'a, In, Out, Err> for M
-    where
-        M: StateMonad<'a, In, Result<Out, Err>> + Sized,
+where
+    M: StateMonad<'a, In, Result<Out, Err>> + Sized,
 {}
 
 #[cfg(test)]

@@ -24,8 +24,8 @@ pub trait StateMonad<'a, In, Out>: Sized + Copy + 'a {
 }
 
 impl<'a, In, Out, F> StateMonad<'a, In, Out> for F
-    where
-        F: FnOnce(In) -> (Out, In) + Sized + Copy + 'a,
+where
+    F: FnOnce(In) -> (Out, In) + Sized + Copy + 'a,
 {
     fn apply(self, input: In) -> (Out, In) {
         self(input)
