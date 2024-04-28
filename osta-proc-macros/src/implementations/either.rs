@@ -32,21 +32,17 @@
 use proc_macro::TokenStream;
 
 use quote::quote;
-use crate::utils::crate_utils::crate_accessor;
 
 pub fn impl_either_unwrap(input: TokenStream) -> TokenStream {
     let n = syn::parse_macro_input!(input as syn::LitInt).base10_parse::<usize>().unwrap();
 
-    let osta_parser_crate = crate_accessor("osta-parser");
-    let either_type = quote! { #osta_parser_crate::parser::combinators::Either };
-
     let impls = (0..=n)
         .fold(Vec::new(), |mut acc, i| {
             if i == 0 {
-                acc.push(quote! { #either_type<T, T> });
+                acc.push(quote! { Either<T, T> });
             } else {
                 let prev = &acc[i - 1];
-                acc.push(quote! { #either_type<T, #prev> });
+                acc.push(quote! { Either<T, #prev> });
             }
             acc
         }).iter()
@@ -57,8 +53,8 @@ pub fn impl_either_unwrap(input: TokenStream) -> TokenStream {
                     impl<T> #either {
                         pub fn unwrap(self) -> T {
                             match self {
-                                #either_type::Left(v) => v,
-                                #either_type::Right(v) => v
+                                Either::Left(v) => v,
+                                Either::Right(v) => v
                             }
                         }
                     }
@@ -68,8 +64,8 @@ pub fn impl_either_unwrap(input: TokenStream) -> TokenStream {
                     impl<T> #either {
                         pub fn unwrap(self) -> T {
                             match self {
-                                #either_type::Left(v) => v,
-                                #either_type::Right(v) => v.unwrap()
+                                Either::Left(v) => v,
+                                Either::Right(v) => v.unwrap()
                             }
                         }
                     }
