@@ -9,13 +9,6 @@ lazy_static::lazy_static! {
     static ref RE_IDENTIFIER: regex::Regex = regex::Regex::new("^[_a-zA-Z][_a-zA-Z0-9]*").unwrap();
 }
 
-pub trait TokenEmitter<'a>: FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>> 
-{}
-impl<'a, M> TokenEmitter<'a> for M
-where
-    M: FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>>
-{}
-
 fn keyword(
     expected: &str,
     token_kind: TokenKind
@@ -29,7 +22,7 @@ fn keyword(
 macro_rules! emitter {
     ($name:ident, $body:expr) => {
         pub fn $name<'a>() -> impl TokenEmitter<'a> {
-            $body
+            skip_whitespace($body)
         }
     };
 }
@@ -127,6 +120,63 @@ mod tests {
                 found: "123foo",
                 kind: TokenizerErrorKind::ExpectedIdentifier
             }), "123foo")
+        );
+    }
+
+    #[test]
+    fn tokens() {
+        assert_eq!(
+            super::lparen().apply("  ("),
+            (Ok(Token {
+                lexeme: "(",
+                kind: TokenKind::LParen
+            }), "")  
+        );
+        assert_eq!(
+            super::identifier().apply(" foo bar"),
+            (Ok(Token {
+                lexeme: "foo",
+                kind: TokenKind::Identifier
+            }), " bar")
+        );
+    }
+
+    #[test]
+    fn ops() {
+        assert_eq!(
+            super::bin_op().apply("+"),
+            (Ok(Token {
+                lexeme: "+",
+                kind: TokenKind::Plus
+            }), "")
+        );
+        assert_eq!(
+            super::bin_op().apply("-"),
+            (Ok(Token {
+                lexeme: "-",
+                kind: TokenKind::Minus
+            }), "")
+        );
+        assert_eq!(
+            super::bin_op().apply("*foo"),
+            (Ok(Token {
+                lexeme: "*",
+                kind: TokenKind::Star
+            }), "foo")
+        );
+        assert_eq!(
+            super::unary_op().apply("!foo"),
+            (Ok(Token {
+                lexeme: "!",
+                kind: TokenKind::Bang
+            }), "foo")
+        );
+        assert_eq!(
+            super::unary_op().apply("-foo"),
+            (Ok(Token {
+                lexeme: "-",
+                kind: TokenKind::Minus
+            }), "foo")
         );
     }
 }

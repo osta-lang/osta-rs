@@ -3,6 +3,13 @@ use crate::token::*;
 
 use osta_func::FallibleStateMonad;
 
+pub trait TokenEmitter<'a>: FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>> 
+{}
+impl<'a, M> TokenEmitter<'a> for M
+where
+    M: FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>>
+{}
+
 pub fn token<'a>(
     expected: &'a str,
     token_kind: TokenKind,
