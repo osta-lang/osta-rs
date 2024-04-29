@@ -24,6 +24,8 @@ pub enum TokenKind {
     RBrace,
     Eq,
     Bang,
+    Comma,
+    Colon,
 
     // Multiple character tokens
     EqEq,
