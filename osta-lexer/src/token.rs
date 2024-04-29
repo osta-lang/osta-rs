@@ -25,7 +25,7 @@ pub enum TokenKind {
     Eq,
     Bang,
 
-    // Multriple character tokens
+    // Multiple character tokens
     EqEq,
     BangEq,
 

@@ -10,6 +10,10 @@ pub enum TokenizerErrorKind<'a> {
     // expected: +, -, ;, ::, !
     ExpectedLiteral(&'a str),
 
+    // NOTE(johanvonelectrum): This kind of errors will appear like:
+    // expected regex: [0-9]+
+    ExpectedRegex(&'a str),
+
     // NOTE(cdecompilador): This kind of errors will appear with an example:
     // expected keyword: if, while
     // ...example for if

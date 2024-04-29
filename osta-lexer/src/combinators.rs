@@ -33,10 +33,29 @@ pub fn token<'a>(
     }
 }
 
-pub fn keyword<'a>(
-    expected: &'a str,
+pub fn regex<'a>(
+    regex: &'a regex::Regex,
+    token_kind: TokenKind,
+) -> impl FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>> {
+    move |input: &'a str| {
+        if let Some(matched) = RE_INT.find(input){
+            (Ok(Token {
+                lexeme: &input[matched.start()..matched.end()],
+                kind: token_kind,
+            }), &input[matched.end()..])
+        } else {
+            (Err(TokenizerError {
+                found: input,
+                kind: TokenizerErrorKind::ExpectedRegex(regex.as_str())
+            }), input)
+        }
+    }
+}
+
+pub fn keyword(
+    expected: &str,
     token_kind: TokenKind
-)  -> impl FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>> {
+) -> impl FallibleStateMonad<&str, Token, TokenizerError> {
     token(expected, token_kind).map_err(|err| TokenizerError {
         found: err.found,
         kind: TokenizerErrorKind::ExpectedKeyword(expected)
@@ -55,35 +74,11 @@ pub fn skip_whitespace<'a, Out: 'a, Err: 'a>(
 }
 
 pub fn integer<'a>() -> impl FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>> {
-    move |input| {
-        if let Some(matched) = RE_INT.find(input){
-            (Ok(Token {
-                lexeme: &input[matched.start()..matched.end()],
-                kind: TokenKind::Int,
-            }), &input[matched.end()..])
-        } else {
-            (Err(TokenizerError {
-                found: input,
-                kind: TokenizerErrorKind::ExpectedInt
-            }), input)
-        }
-    }
+    regex(&RE_INT, TokenKind::Int)
 }
 
 pub fn identifier<'a>() -> impl FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>> {
-    move |input| {
-        if let Some(matched) = RE_IDENTIFIER.find(input){
-            (Ok(Token {
-                lexeme: &input[matched.start()..matched.end()],
-                kind: TokenKind::Identifier,
-            }), &input[matched.end()..])
-        } else {
-            (Err(TokenizerError {
-                found: input,
-                kind: TokenizerErrorKind::ExpectedIdentifier
-            }), input)
-        }
-    }
+    regex(&RE_IDENTIFIER, TokenKind::Identifier)
 }
 
 #[cfg(test)]

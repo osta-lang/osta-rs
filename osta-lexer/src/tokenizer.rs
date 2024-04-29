@@ -3,6 +3,8 @@ use crate::error::*;
 use crate::combinators::*;
 
 use osta_func::*;
+use osta_func::fallible::foundational::composition;
+use osta_func::foundational::optional;
 
 #[derive(Copy, Clone)]
 pub struct Tokenizer<'a> {
@@ -24,25 +26,12 @@ impl<'a> StateMonad<'a, &'a str, Result<Token<'a>, TokenizerError<'a>>> for Toke
             .or_else(|_| token(")", TokenKind::RParen))
             .or_else(|_| token("{", TokenKind::LBrace))
             .or_else(|_| token("}", TokenKind::RBrace))
-            /*
-            TODO:
-            .or_else(|_| maybe_two(keyword("=", TokenKind::Eq), token("=", TokenKind::EqEq)))
-            .or_else(|_| maybe_two(keyword("!", TokenKind::Bang), token("=", TokenKind::BangEq)))
-
-            REMOVE:
-            .or_else(|_| FallibleStateMonad::and_then(literal("="), 
-                move |left_out| optional(literal("=")).map(move |right_out| match right_out {
-                    Some(right_out) => Ok::<Token<'_>, TokenizerError<'_>>(Token { lexeme: right_out, kind: TokenKind::EqEq }),
-                    None => Ok(Token { lexeme: left_out, kind: TokenKind::Eq })
-                })))
-            .or_else(|_| FallibleStateMonad::and_then(literal("!"), 
-                move |left_out| optional(literal("=")).map(move |right_out| match right_out {
-                    Some(right_out) => Ok::<Token<'_>, TokenizerError<'_>>(Token { lexeme: right_out, kind: TokenKind::Bang }),
-                    None => Ok(Token { lexeme: left_out, kind: TokenKind::BangEq })
-                })))
-            */
+            .or_else(|_| composition(token("=", TokenKind::Eq), token("=", TokenKind::EqEq))
+                .map_out(|out| out.unwrap()))
+            .or_else(|_| composition(token("!", TokenKind::Bang), token("=", TokenKind::BangEq))
+                .map_out(|out| out.unwrap()))
             .map_out(|out| out.unwrap())
-            .apply(input)    
+            .apply(input)
     }
 }
 
