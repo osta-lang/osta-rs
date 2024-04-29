@@ -1,2 +1,6 @@
-pub mod lexer;
-pub mod combinators;
+mod token;
+mod combinators;
+mod error;
+mod tokenizer;
+
+pub use tokenizer::Tokenizer;
