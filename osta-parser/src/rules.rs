@@ -104,7 +104,6 @@ mod tests {
         );
     }
 
-    // FIXME:
     #[test]
     fn data_rollback() {
         let input = input!("foo");
