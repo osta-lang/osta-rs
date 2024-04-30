@@ -7,13 +7,14 @@ use osta_func::{FallibleStateMonad, StateMonad};
 use osta_lexer::base::TokenEmitter;
 use osta_lexer::token::TokenKind;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct ParserInput<'a> {
     input: &'a str,
     builder: Rc<RefCell<AstBuilder<'a>>>
 }
 type ParserOutput<'a> = (NodeRef, Option<DataRef>);
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ParserError<'a> {
     TokenizerError(osta_lexer::error::TokenizerError<'a>),
     UnexpectedToken { expected: TokenKind, found: TokenKind },

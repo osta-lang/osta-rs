@@ -19,17 +19,19 @@ pub enum Data<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Node {
-    kind: NodeKind,
-    parent: NodeRef,
+    pub kind: NodeKind,
+    pub parent: NodeRef,
 }
 
+#[derive(Debug)]
 pub struct Ast<'a> {
-    nodes: Vec<Node>,
-    datas: Vec<Data<'a>>
+    pub nodes: Vec<Node>,
+    pub datas: Vec<Data<'a>>
 }
 
+#[derive(Debug)]
 pub struct AstBuilder<'a> {
-    ast: Ast<'a>,
+    pub ast: Ast<'a>,
     checkpoints: Vec<(NodeRef, DataRef)>
 }
 
