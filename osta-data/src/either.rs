@@ -1,5 +1,6 @@
 use osta_proc_macros::impl_either_unwrap;
 
+#[derive(Debug)]
 pub enum Either<L, R> {
     Left(L),
     Right(R),

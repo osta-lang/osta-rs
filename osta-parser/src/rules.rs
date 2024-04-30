@@ -26,11 +26,15 @@ pub fn term<'a>() -> impl Parser<'a> {
 }
 */
 
+// TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
+// should be on osta-ast, but in osta-ast we don't have any real parser to test so for now their
+// tests live within rules
 #[cfg(test)]
-mod test {
+mod tests {
     use osta_lexer::token::*;
     use osta_ast::*;
     use osta_func::*;
+    use crate::Parser;
 
     macro_rules! input {
         ($str_input:expr) => {{
@@ -95,6 +99,27 @@ mod test {
             ],
             [
                 _,
+                Data::Token(Token { kind: TokenKind::Identifier, .. })
+            ]
+        );
+    }
+
+    // FIXME:
+    #[test]
+    fn data_rollback() {
+        let input = input!("foo");
+        assert_ast!(
+            FallibleStateMonad::and_then(
+                super::data(osta_lexer::tokens::identifier()),
+                |_| super::data(osta_lexer::tokens::integer())
+            )
+                .map_err(|err| err.unwrap())
+                .or(super::data(osta_lexer::tokens::identifier())),
+            input,
+            [ 
+                Node { kind: NodeKind::Data(0), .. } 
+            ],
+            [
                 Data::Token(Token { kind: TokenKind::Identifier, .. })
             ]
         );
