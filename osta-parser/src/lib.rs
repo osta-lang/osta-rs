@@ -20,8 +20,11 @@ pub enum ParserError<'a> {
 }
 
 pub trait Parser<'a>: FallibleStateMonad<'a, ParserInput<'a>, ParserOutput<'a>, ParserError<'a>> {
-    fn and<P: Parser<'a> + 'a>(self, parser: P) -> impl Parser<'a> {
-        FallibleStateMonad::and_then(self, move |_| parser).map_err(|err| err.unwrap())
+    fn and<P: Parser<'a> + 'a, F>(self, parser_factory: F) -> impl Parser<'a>
+    where
+        F: FnOnce(ParserOutput) -> P + Copy + 'a
+    {
+        FallibleStateMonad::and_then(self, parser_factory).map_err(|err| err.unwrap())
     }
 
     fn or<P: Parser<'a> + 'a>(self, parser: P) -> impl Parser<'a> {

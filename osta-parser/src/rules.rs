@@ -1,10 +1,12 @@
-use osta_ast::{Data, NodeKind};
-use osta_lexer::{base::*, tokens::integer};
+use osta_ast::{Data, DataRef, NodeKind};
+use osta_lexer::{base::*, tokens};
+
 use crate::{Parser, ParserError, ParserInput};
 
-fn data<'a, E>(emitter: E) -> impl Parser<'a>
+fn token<'a, E, F>(emitter: E, map_fn: F) -> impl Parser<'a>
 where
-    E: TokenEmitter<'a>
+    E: TokenEmitter<'a>,
+    F: Fn(DataRef) -> NodeKind + Copy + 'a
 {
     move |input: ParserInput<'a>| {
         let (result, rest) = emitter.apply(input.input);
@@ -12,7 +14,7 @@ where
             Ok(out) => {
                 let mut builder = input.builder.borrow_mut();
                 let data_ref = builder.push_data(Data::Token(out));
-                let node_ref = builder.push_node(NodeKind::Data(data_ref), !0); // TODO: Node must have a daddy
+                let node_ref = builder.push_node(map_fn(data_ref), !0);
                 (Ok((node_ref, Some(data_ref))), ParserInput { input: rest, builder: input.builder.clone() })
             },
             Err(err) => (Err(ParserError::TokenizerError(err)), input)
@@ -20,20 +22,35 @@ where
     }
 }
 
-/*
-pub fn term<'a>() -> impl Parser<'a> {
-    data(integer())
+pub fn integer<'a>() -> impl Parser<'a> {
+    token(tokens::integer(), |data_ref| NodeKind::IntegerLiteral(data_ref))
 }
-*/
+
+pub fn identifier<'a>() -> impl Parser<'a> {
+    token(tokens::identifier(), |data_ref| NodeKind::Identifier(data_ref))
+}
+
+pub fn term<'a>() -> impl Parser<'a> {
+    integer()
+        .or(identifier())
+        .and(move |(pre_node_ref, _)| move |input: ParserInput<'a>| {
+            let mut builder = input.builder.borrow_mut();
+            let node_ref = builder.push_node(NodeKind::Term(pre_node_ref), !0);
+            builder.ast.nodes[pre_node_ref].parent = node_ref;
+            drop(builder);
+            (Ok((node_ref, None)), input)
+        })
+}
 
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
 // should be on osta-ast, but in osta-ast we don't have any real parser to test so for now their
 // tests live within rules
 #[cfg(test)]
 mod tests {
-    use osta_lexer::token::*;
     use osta_ast::*;
     use osta_func::*;
+    use osta_lexer::token::*;
+
     use crate::Parser;
 
     macro_rules! input {
@@ -47,7 +64,7 @@ mod tests {
 
     macro_rules! assert_ast {
         ($p:expr, $input:expr, $nodes:pat, $datas:pat) => {{
-            let (_, rest) = dbg!($p.apply($input));
+            let (_, rest) = $p.apply($input);
 
             // NOTE(cdecompilador): using matches! here may make some literal matching painful
             // for example we can't write !0 inside
@@ -65,12 +82,12 @@ mod tests {
     }
     
     #[test]
-    fn data() {
-        let input = input!("  123");
+    fn test_integer() {
+        let input = input!("123");
         assert_ast!(
-            super::data(osta_lexer::tokens::integer()), input,
+            super::integer(), input,
             [
-                Node { kind: NodeKind::Data(0), .. }
+                Node { kind: NodeKind::IntegerLiteral(0), .. }
             ], 
             [
                 Data::Token(Token { kind: TokenKind::Int, .. })
@@ -79,48 +96,32 @@ mod tests {
     }
 
     #[test]
-    fn data_sequence() {
-        let input = input!("123 foo");
+    fn test_identifier() {
+        let input = input!("foo");
         let rest = assert_ast!(
-            super::data(osta_lexer::tokens::integer()), input,
+            super::identifier(), input,
             [
-                Node { kind: NodeKind::Data(0), .. }
+                Node { kind: NodeKind::Identifier(0), .. }
             ], 
             [
-                Data::Token(Token { kind: TokenKind::Int, .. })
-            ]
-        );
-
-        assert_ast!(
-            super::data(osta_lexer::tokens::identifier()), rest,
-            [
-                _,
-                Node { kind: NodeKind::Data(1), .. }
-            ],
-            [
-                _,
                 Data::Token(Token { kind: TokenKind::Identifier, .. })
             ]
         );
+        assert_eq!(rest.input, "");
     }
 
     #[test]
     fn data_rollback() {
-        let input = input!("foo");
-        assert_ast!(
-            FallibleStateMonad::and_then(
-                super::data(osta_lexer::tokens::identifier()),
-                |_| super::data(osta_lexer::tokens::integer())
-            )
-                .map_err(|err| err.unwrap())
-                .or(super::data(osta_lexer::tokens::identifier())),
-            input,
+        let input = input!("foo $");
+        let rest = assert_ast!(
+            super::identifier().and(|_| super::integer()).or(super::identifier()), input,
             [ 
-                Node { kind: NodeKind::Data(0), .. } 
+                Node { kind: NodeKind::Identifier(0), .. }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Identifier, .. })
             ]
         );
+        assert_eq!(rest.input, " $");
     }
 }

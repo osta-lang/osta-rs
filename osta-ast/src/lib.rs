@@ -5,11 +5,12 @@ pub type DataRef = usize;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NodeKind {
+    IntegerLiteral(DataRef),
+    Identifier(DataRef),
     BinExpr { left: NodeRef, op: NodeRef, right: NodeRef },
     Term(NodeRef),
     BangExpr(NodeRef),
     FuncCall,
-    Data(DataRef)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
