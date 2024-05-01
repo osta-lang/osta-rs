@@ -26,17 +26,14 @@ fn token<'a, E, F>(emitter: E, map_fn: F) -> impl Parser<'a>
 
 pub fn integer<'a>() -> impl Parser<'a> {
     token(tokens::integer(), |data_ref| NodeKind::IntegerLiteral(data_ref))
-        .and(move |(pre_node_ref, _)| move |input: ParserInput<'a>| {
-            let mut builder = input.builder.borrow_mut();
-            let node_ref = builder.push_node(NodeKind::Term(pre_node_ref), !0);
-            builder.ast.nodes[pre_node_ref].parent = node_ref;
-            drop(builder);
-            (Ok((node_ref, None)), input)
-        })
 }
 
 pub fn identifier<'a>() -> impl Parser<'a> {
     token(tokens::identifier(), |data_ref| NodeKind::Identifier(data_ref))
+}
+
+pub fn term<'a>() -> impl Parser<'a> {
+    integer().or(identifier())
         .and(move |(pre_node_ref, _)| move |input: ParserInput<'a>| {
             let mut builder = input.builder.borrow_mut();
             let node_ref = builder.push_node(NodeKind::Term(pre_node_ref), !0);
@@ -44,10 +41,6 @@ pub fn identifier<'a>() -> impl Parser<'a> {
             drop(builder);
             (Ok((node_ref, None)), input)
         })
-}
-
-pub fn term<'a>() -> impl Parser<'a> {
-    integer().or(identifier())
         .or(
             move |mut input: ParserInput<'a>| {
                 match tokens::lparen().apply(input.input) {
