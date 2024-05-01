@@ -11,7 +11,7 @@ pub enum NodeKind {
     Identifier(DataRef),
     BinExpr { left: NodeRef, op: DataRef, right: NodeRef },
     Term(NodeRef),
-    BangExpr(NodeRef),
+    UnaryTerm { op: DataRef, child: NodeRef },
     FuncCall,
 }
 
