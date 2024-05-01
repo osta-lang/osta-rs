@@ -19,6 +19,7 @@
 use proc_macro::TokenStream;
 
 use quote::quote;
+
 use crate::utils::crate_utils::crate_accessor;
 
 struct Sequence {

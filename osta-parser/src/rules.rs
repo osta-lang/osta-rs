@@ -1,11 +1,10 @@
-use std::cell::RefMut;
 use osta_ast::*;
 use osta_func::*;
-use osta_lexer::{base::*, base, tokens};
+use osta_lexer::{base::*, tokens};
 use osta_lexer::token::Token;
 use osta_proc_macros::sequence;
 
-use crate::{Parser, ParserError, ParserInput, ParserOutput};
+use crate::{Parser, ParserError, ParserInput};
 
 fn from_emitter<'a, E>(emitter: E) -> impl FallibleStateMonad<'a, ParserInput<'a>, Token<'a>, ParserError<'a>>
 where

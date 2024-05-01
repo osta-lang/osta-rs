@@ -1,5 +1,5 @@
-use std::cell::RefMut;
 use osta_data::either::Either;
+
 use crate::monads::state_monad::StateMonad;
 
 pub trait FallibleStateMonad<'a, In: 'a + Clone, Out: 'a, Err: 'a>: StateMonad<'a, In, Result<Out, Err>> {

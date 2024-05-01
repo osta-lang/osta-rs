@@ -1,11 +1,11 @@
-mod rules;
-
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::rc::Rc;
-use osta_ast::{AstBuilder, Data, DataRef, NodeKind, NodeRef};
-use osta_func::{StateMonad, FallibleStateMonad};
+
+use osta_ast::{AstBuilder, DataRef, NodeRef};
+use osta_func::{FallibleStateMonad, StateMonad};
 use osta_lexer::token::TokenKind;
-use osta_proc_macros::sequence;
+
+mod rules;
 
 #[derive(Debug, Clone)]
 pub struct ParserInput<'a> {

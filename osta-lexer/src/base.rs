@@ -1,9 +1,9 @@
+use osta_func::FallibleStateMonad;
+
 use crate::error::*;
 use crate::token::*;
 
-use osta_func::FallibleStateMonad;
-
-pub trait TokenEmitter<'a>: FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>> 
+pub trait TokenEmitter<'a>: FallibleStateMonad<'a, &'a str, Token<'a>, TokenizerError<'a>>
 {}
 impl<'a, M> TokenEmitter<'a> for M
 where
@@ -67,8 +67,9 @@ pub fn skip_whitespace<'a, Out: 'a, Err: 'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use osta_func::StateMonad;
+
+    use super::*;
 
     #[test]
     fn token() {

@@ -1,8 +1,8 @@
+use osta_func::FallibleStateMonad;
+
+use crate::base::*;
 use crate::error::*;
 use crate::token::*;
-use crate::base::*;
-
-use osta_func::FallibleStateMonad;
 
 lazy_static::lazy_static! {
     static ref RE_INT: regex::Regex = regex::Regex::new("^[0-9]+").unwrap();
@@ -62,8 +62,9 @@ emitter!(unary_op, minus()
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use osta_func::StateMonad;
+
+    use super::*;
 
     #[test]
     fn integer() {
