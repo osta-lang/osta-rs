@@ -66,6 +66,8 @@ pub fn expr<'a>() -> impl Parser<'a> {
                     op: op_ref,
                     right: right_node_ref
                  }, NULL_REF);
+                builder.ast.nodes[left_node_ref].parent = expr_ref;
+                builder.ast.nodes[right_node_ref].parent = expr_ref;
                 drop(builder);
                 
                 (Ok((expr_ref, None)), input)  
@@ -167,10 +169,10 @@ mod tests {
         let rest = assert_ast!(
             super::expr(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), .. },
-                Node { kind: NodeKind::Term(0), .. },
-                Node { kind: NodeKind::IntegerLiteral(1), .. },
-                Node { kind: NodeKind::Term(2), .. },
+                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
+                Node { kind: NodeKind::Term(0), parent: 4 },
+                Node { kind: NodeKind::IntegerLiteral(1), parent: 3 },
+                Node { kind: NodeKind::Term(2), parent:  4 },
                 Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, .. }
             ],
             [
