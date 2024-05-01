@@ -1,7 +1,8 @@
+use std::cell::RefMut;
 use osta_data::either::Either;
 use crate::monads::state_monad::StateMonad;
 
-pub trait FallibleStateMonad<'a, In: 'a, Out: 'a, Err: 'a>: StateMonad<'a, In, Result<Out, Err>> {
+pub trait FallibleStateMonad<'a, In: 'a + Clone, Out: 'a, Err: 'a>: StateMonad<'a, In, Result<Out, Err>> {
     fn map_out<NewOut: 'a, F>(
         self,
         map_fn: F
@@ -55,9 +56,28 @@ pub trait FallibleStateMonad<'a, In: 'a, Out: 'a, Err: 'a>: StateMonad<'a, In, R
             }
         }
     }
+
+    fn map_out_with_input<F, NewOut: 'a>(
+        self,
+        map_fn: F
+    ) -> impl FallibleStateMonad<'a, In, NewOut, Err>
+        where
+            F: Fn(Out, In) -> NewOut + Copy + 'a
+    {
+        move |input: In| {
+            let (result, rest) = self.apply(input);
+            match result {
+                Ok(out) => {
+                    let out = map_fn(out, rest.clone());
+                    (Ok(out), rest)
+                },
+                Err(err) => (Err(err), rest)
+            }
+        }
+    }
 }
 
-impl<'a, In: 'a, Out: 'a, Err: 'a, M> FallibleStateMonad<'a, In, Out, Err> for M
+impl<'a, In: 'a + Clone, Out: 'a, Err: 'a, M> FallibleStateMonad<'a, In, Out, Err> for M
 where
     M: StateMonad<'a, In, Result<Out, Err>> + Sized,
 {}

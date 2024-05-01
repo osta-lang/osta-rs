@@ -12,7 +12,7 @@ where
     left.and_then(move |out1| right.map(move |out2| (out1, out2)))
 }
 
-pub fn optional<'a, M, In: 'a, Out: 'a, Err: 'a>(monad: M) -> impl StateMonad<'a, In, Option<Out>>
+pub fn optional<'a, M, In: 'a + Clone, Out: 'a, Err: 'a>(monad: M) -> impl StateMonad<'a, In, Option<Out>>
 where
     M: FallibleStateMonad<'a, In, Out, Err>,
 {

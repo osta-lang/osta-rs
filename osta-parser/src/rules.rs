@@ -1,9 +1,23 @@
+use std::cell::RefMut;
 use osta_ast::*;
 use osta_func::*;
 use osta_lexer::{base::*, base, tokens};
+use osta_lexer::token::Token;
 use osta_proc_macros::sequence;
 
 use crate::{Parser, ParserError, ParserInput, ParserOutput};
+
+fn from_emitter<'a, E>(emitter: E) -> impl FallibleStateMonad<'a, ParserInput<'a>, Token<'a>, ParserError<'a>>
+where
+    E: TokenEmitter<'a>
+{
+    move |input: ParserInput<'a>| {
+        let (result, rest) = emitter
+            .map_err(ParserError::TokenizerError)
+            .apply(input.input);
+        (result, ParserInput { input: rest, builder: input.builder.clone() })
+    }
+}
 
 fn token<'a, E, F>(emitter: E, map_fn: F) -> impl Parser<'a>
     where
@@ -32,6 +46,12 @@ pub fn identifier<'a>() -> impl Parser<'a> {
     token(tokens::identifier(), |data_ref| NodeKind::Identifier(data_ref))
 }
 
+macro_rules! defer {
+    ($d:expr) => {{
+        move |input| $d.apply(input)
+    }};
+}
+
 pub fn term<'a>() -> impl Parser<'a> {
     integer().or(identifier())
         .and(move |(pre_node_ref, _)| move |input: ParserInput<'a>| {
@@ -42,95 +62,53 @@ pub fn term<'a>() -> impl Parser<'a> {
             (Ok((node_ref, None)), input)
         })
         .or(
-            move |mut input: ParserInput<'a>| {
-                match tokens::lparen().apply(input.input) {
-                    (Ok(_), tok_rest) => {
-                        input.input = tok_rest;
-                        match expr().apply(input.clone()) {
-                            (Ok((expr_ref, _)), mut rest) => {
-                                match tokens::rparen().apply(rest.input) {
-                                    (Ok(_), tok_rest) => {
-                                        rest.input = tok_rest;
-                                        let mut builder = rest.builder.borrow_mut();
-                                        let term_ref = builder.push_node(NodeKind::Term(expr_ref), NULL_REF);
-                                        builder.ast.nodes[expr_ref].parent = term_ref;
-                                        drop(builder);
-
-                                        (Ok((term_ref, None)), rest)
-                                    },
-                                    (Err(err), _) => (Err(ParserError::TokenizerError(err)), input)
-                                }
-                            }
-                            e => e 
-                        }
-                    },
-                    (Err(err), _) => (Err(ParserError::TokenizerError(err)), input)
-                }
-            }  
+            sequence!(
+                ParserInput<'a>,
+                from_emitter(tokens::lparen()),
+                defer!(expr()),
+                from_emitter(tokens::rparen())
+            )
+                .map_err(|err| err.unwrap())
+                .map_out(|(_, (child_ref, _), _)| (child_ref, None))
         )
-        .or(
-            move |mut input: ParserInput<'a>| {
-                match tokens::minus().apply(input.input) {
-                    (Ok(minus_token), tok_rest) => {
-                        input.input = tok_rest;
-                        match term().apply(input.clone()) {
-                            (Ok((child_ref, _)), rest) => {
-                                let mut builder = rest.builder.borrow_mut();
-                                let sign_ref = builder.push_data(Data::Token(minus_token));
-                                let unary_ref = builder.push_node(NodeKind::UnaryTerm {
-                                    op: sign_ref,
-                                    child: child_ref
-                                }, NULL_REF);
-                                builder.ast.nodes[child_ref].parent = unary_ref;
-                                drop(builder);
-
-                                (Ok((unary_ref, None)), rest)
-                            },
-                            e => e
-                        }
-                    }
-                    (Err(err), _) => (Err(ParserError::TokenizerError(err)), input)
-                }
-            }
+        .or(sequence!(
+                ParserInput<'a>,
+                from_emitter(tokens::unary_op()),
+                defer!(term())
+            )
+                .map_err(|err| err.unwrap())
+                .map_out_with_input(|(token, (child_ref, _)), input| {
+                    let mut builder = input.builder.borrow_mut();
+                    let op_ref = builder.push_data(Data::Token(token));
+                    let node_ref = builder.push_node(NodeKind::UnaryTerm { op: op_ref, child: child_ref }, !0);
+                    builder.ast.nodes[child_ref].parent = node_ref;
+                    (node_ref, Some(op_ref))
+                }),
         )
-}
-
-macro_rules! defer {
-    ($d:expr) => {{
-        move |input| $d.apply(input)
-    }};
 }
 
 pub fn expr<'a>() -> impl Parser<'a> {
-    (move |input: ParserInput<'a>| {
-        let binding = input.clone();
-        let parser = sequence!(
-            ParserInput<'a>,
-            term(),
-            move |input: ParserInput<'a>| {
-                let (result, rest) = tokens::plus()
-                    .map_err(ParserError::TokenizerError)
-                    .apply(input.input);
-                (result, ParserInput { input: rest, builder: input.builder.clone() })
-            },
-            expr()
-        )
-            .map_err(|err| err.unwrap())
-            .map_out(|((left_ref, _), token, (right_ref, _))| {
-                let mut builder = binding.builder.borrow_mut();
-                let expr_kind = NodeKind::BinExpr {
-                    left: left_ref,
-                    op: builder.push_data(Data::Token(token)),
-                    right: right_ref,
-                };
-                let expr_ref = builder.push_node(expr_kind, !0);
-                builder.ast.nodes[left_ref].parent = expr_ref;
-                builder.ast.nodes[right_ref].parent = expr_ref;
-                drop(builder);
-                (expr_ref, None::<DataRef>)
-            });
-        parser.apply(input)
-    }).or(term())
+    sequence!(
+        ParserInput<'a>,
+        term(),
+        from_emitter(tokens::plus()),
+        defer!(expr())
+    )
+        .map_err(|err| err.unwrap())
+        .map_out_with_input(|((left_ref, _), token, (right_ref, _)), input| {
+            let mut builder = input.builder.borrow_mut();
+            let expr_kind = NodeKind::BinExpr {
+                left: left_ref,
+                op: builder.push_data(Data::Token(token)),
+                right: right_ref,
+            };
+            let expr_ref = builder.push_node(expr_kind, !0);
+            builder.ast.nodes[left_ref].parent = expr_ref;
+            builder.ast.nodes[right_ref].parent = expr_ref;
+            drop(builder);
+            (expr_ref, None::<DataRef>)
+        })
+        .or(term())
 }
 
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
@@ -208,8 +186,7 @@ mod tests {
             super::term(), input,
             [
                 Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
-                Node { kind: NodeKind::Term(0), parent: 2 },
-                Node { kind: NodeKind::Term(1), parent: NULL_REF },
+                Node { kind: NodeKind::Term(0), parent: NULL_REF },
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. })
@@ -224,8 +201,7 @@ mod tests {
                 Node { kind: NodeKind::Term(0), parent: 4 },
                 Node { kind: NodeKind::Identifier(1), parent: 3 },
                 Node { kind: NodeKind::Term(2), parent:  4 },
-                Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, parent: 5 },
-                Node { kind: NodeKind::Term(4), parent: NULL_REF },
+                Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, parent: NULL_REF },
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. }),
