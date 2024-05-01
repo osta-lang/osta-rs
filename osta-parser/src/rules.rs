@@ -25,15 +25,6 @@ fn token<'a, E, F>(emitter: E, map_fn: F) -> impl Parser<'a>
 
 pub fn integer<'a>() -> impl Parser<'a> {
     token(tokens::integer(), |data_ref| NodeKind::IntegerLiteral(data_ref))
-}
-
-pub fn identifier<'a>() -> impl Parser<'a> {
-    token(tokens::identifier(), |data_ref| NodeKind::Identifier(data_ref))
-}
-
-pub fn term<'a>() -> impl Parser<'a> {
-    integer()
-        .or(identifier())
         .and(move |(pre_node_ref, _)| move |input: ParserInput<'a>| {
             let mut builder = input.builder.borrow_mut();
             let node_ref = builder.push_node(NodeKind::Term(pre_node_ref), !0);
@@ -41,6 +32,48 @@ pub fn term<'a>() -> impl Parser<'a> {
             drop(builder);
             (Ok((node_ref, None)), input)
         })
+}
+
+pub fn identifier<'a>() -> impl Parser<'a> {
+    token(tokens::identifier(), |data_ref| NodeKind::Identifier(data_ref))
+        .and(move |(pre_node_ref, _)| move |input: ParserInput<'a>| {
+            let mut builder = input.builder.borrow_mut();
+            let node_ref = builder.push_node(NodeKind::Term(pre_node_ref), !0);
+            builder.ast.nodes[pre_node_ref].parent = node_ref;
+            drop(builder);
+            (Ok((node_ref, None)), input)
+        })
+}
+
+pub fn term<'a>() -> impl Parser<'a> {
+    integer().or(identifier())
+        .or(
+            move |mut input: ParserInput<'a>| {
+                match tokens::lparen().apply(input.input) {
+                    (Ok(_), tok_rest) => {
+                        input.input = tok_rest;
+                        match expr().apply(input.clone()) {
+                            (Ok((expr_ref, _)), mut rest) => {
+                                match tokens::rparen().apply(rest.input) {
+                                    (Ok(_), tok_rest) => {
+                                        rest.input = tok_rest;
+                                        let mut builder = rest.builder.borrow_mut();
+                                        let term_ref = builder.push_node(NodeKind::Term(expr_ref), NULL_REF);
+                                        builder.ast.nodes[expr_ref].parent = term_ref;
+                                        drop(builder);
+
+                                        (Ok((term_ref, None)), rest)
+                                    },
+                                    (Err(err), _) => (Err(ParserError::TokenizerError(err)), input)
+                                }
+                            }
+                            e => e 
+                        }
+                    },
+                    (Err(err), _) => (Err(ParserError::TokenizerError(err)), input)
+                }
+            }  
+        )
 }
 
 macro_rules! defer {
@@ -141,6 +174,40 @@ mod tests {
             ]
         );
         assert_eq!(rest.input, "");
+    }
+
+    #[test]
+    fn term() {
+        let input = input!("(123)");
+        assert_ast!(
+            super::term(), input,
+            [
+                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
+                Node { kind: NodeKind::Term(0), parent: 2 },
+                Node { kind: NodeKind::Term(1), parent: NULL_REF },
+            ],
+            [
+                Data::Token(Token { kind: TokenKind::Int, .. })
+            ]
+        );
+
+        let input = input!("(123 + 456)");
+        assert_ast!(
+            super::term(), input,
+            [
+                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
+                Node { kind: NodeKind::Term(0), parent: 4 },
+                Node { kind: NodeKind::IntegerLiteral(1), parent: 3 },
+                Node { kind: NodeKind::Term(2), parent:  4 },
+                Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, parent: 5 },
+                Node { kind: NodeKind::Term(4), parent: NULL_REF },
+            ],
+            [
+                Data::Token(Token { kind: TokenKind::Int, .. }),
+                Data::Token(Token { kind: TokenKind::Int, .. }),
+                Data::Token(Token { kind: TokenKind::Plus, .. })
+            ]
+        );
     }
 
     #[test]
