@@ -74,6 +74,31 @@ pub fn term<'a>() -> impl Parser<'a> {
                 }
             }  
         )
+        .or(
+            move |mut input: ParserInput<'a>| {
+                match tokens::minus().apply(input.input) {
+                    (Ok(minus_token), tok_rest) => {
+                        input.input = tok_rest;
+                        match term().apply(input.clone()) {
+                            (Ok((child_ref, _)), rest) => {
+                                let mut builder = rest.builder.borrow_mut();
+                                let sign_ref = builder.push_data(Data::Token(minus_token));
+                                let unary_ref = builder.push_node(NodeKind::UnaryTerm {
+                                    op: sign_ref,
+                                    child: child_ref
+                                }, NULL_REF);
+                                builder.ast.nodes[child_ref].parent = unary_ref;
+                                drop(builder);
+
+                                (Ok((unary_ref, None)), rest)
+                            },
+                            e => e
+                        }
+                    }
+                    (Err(err), _) => (Err(ParserError::TokenizerError(err)), input)
+                }
+            }
+        )
 }
 
 macro_rules! defer {
@@ -191,21 +216,35 @@ mod tests {
             ]
         );
 
-        let input = input!("(123 + 456)");
+        let input = input!("(123 + foo)");
         assert_ast!(
             super::term(), input,
             [
                 Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
                 Node { kind: NodeKind::Term(0), parent: 4 },
-                Node { kind: NodeKind::IntegerLiteral(1), parent: 3 },
+                Node { kind: NodeKind::Identifier(1), parent: 3 },
                 Node { kind: NodeKind::Term(2), parent:  4 },
                 Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, parent: 5 },
                 Node { kind: NodeKind::Term(4), parent: NULL_REF },
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. }),
-                Data::Token(Token { kind: TokenKind::Int, .. }),
+                Data::Token(Token { kind: TokenKind::Identifier, .. }),
                 Data::Token(Token { kind: TokenKind::Plus, .. })
+            ]
+        );
+
+        let input = input!("-123");
+        assert_ast!(
+            super::term(), input,
+            [
+                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
+                Node { kind: NodeKind::Term(0), parent: 2 },
+                Node { kind: NodeKind::UnaryTerm { op: 1, child: 1 }, parent: NULL_REF }
+            ],
+            [
+                Data::Token(Token { kind: TokenKind::Int, .. }),
+                Data::Token(Token { kind: TokenKind::Minus, .. })
             ]
         );
     }
