@@ -1,8 +1,9 @@
 use osta_ast::*;
 use osta_func::*;
-use osta_lexer::{base::*, tokens};
+use osta_lexer::{base::*, base, tokens};
+use osta_proc_macros::sequence;
 
-use crate::{Parser, ParserError, ParserInput};
+use crate::{Parser, ParserError, ParserInput, ParserOutput};
 
 fn token<'a, E, F>(emitter: E, map_fn: F) -> impl Parser<'a>
     where
@@ -50,29 +51,35 @@ macro_rules! defer {
 }
 
 pub fn expr<'a>() -> impl Parser<'a> {
-    term().and(move |(left_node_ref, _)| move |mut input: ParserInput<'a>| {
-            let (op_result, rest) = tokens::plus()
-                .map_err(ParserError::TokenizerError)
-                .apply(input.input);
-            let token = match op_result {
-                Ok(token) => token,
-                Err(err) => return (Err(err), input)
-            };
-            input.input = rest;
-            expr().and(move |(right_node_ref, _)| move |input: ParserInput<'a>| {
-                let mut builder = input.builder.borrow_mut();
+    (move |input: ParserInput<'a>| {
+        let binding = input.clone();
+        let parser = sequence!(
+            ParserInput<'a>,
+            term(),
+            move |input: ParserInput<'a>| {
+                let (result, rest) = tokens::plus()
+                    .map_err(ParserError::TokenizerError)
+                    .apply(input.input);
+                (result, ParserInput { input: rest, builder: input.builder.clone() })
+            },
+            expr()
+        )
+            .map_err(|err| err.unwrap())
+            .map_out(|((left_ref, _), token, (right_ref, _))| {
+                let mut builder = binding.builder.borrow_mut();
                 let expr_kind = NodeKind::BinExpr {
-                    left: left_node_ref,
+                    left: left_ref,
                     op: builder.push_data(Data::Token(token)),
-                    right: right_node_ref
+                    right: right_ref,
                 };
                 let expr_ref = builder.push_node(expr_kind, !0);
-                builder.ast.nodes[left_node_ref].parent = expr_ref;
-                builder.ast.nodes[right_node_ref].parent = expr_ref;
+                builder.ast.nodes[left_ref].parent = expr_ref;
+                builder.ast.nodes[right_ref].parent = expr_ref;
                 drop(builder);
-                (Ok((expr_ref, None)), input)
-            }).apply(input)
-        }).or(term())
+                (expr_ref, None::<DataRef>)
+            });
+        parser.apply(input)
+    }).or(term())
 }
 
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
