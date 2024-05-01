@@ -9,3 +9,4 @@ edition = "2021"
 osta-lexer = { path = "../osta-lexer" }
 osta-func = { path = "../osta-func" }
 osta-ast = { path = "../osta-ast" }
+osta-proc-macros = { path = "../osta-proc-macros" }

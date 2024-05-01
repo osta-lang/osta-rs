@@ -17,6 +17,7 @@ type ParserOutput<'a> = (NodeRef, Option<DataRef>);
 pub enum ParserError<'a> {
     TokenizerError(osta_lexer::error::TokenizerError<'a>),
     UnexpectedToken { expected: TokenKind, found: TokenKind },
+    Unknown
 }
 
 pub trait Parser<'a>: FallibleStateMonad<'a, ParserInput<'a>, ParserOutput<'a>, ParserError<'a>> {

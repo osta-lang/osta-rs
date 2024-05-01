@@ -3,11 +3,13 @@ use osta_lexer::token::Token;
 pub type NodeRef = usize;
 pub type DataRef = usize;
 
+pub const NULL_REF: usize = !0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NodeKind {
     IntegerLiteral(DataRef),
     Identifier(DataRef),
-    BinExpr { left: NodeRef, op: NodeRef, right: NodeRef },
+    BinExpr { left: NodeRef, op: DataRef, right: NodeRef },
     Term(NodeRef),
     BangExpr(NodeRef),
     FuncCall,

@@ -1,5 +1,6 @@
-use osta_ast::{Data, DataRef, NodeKind};
+use osta_ast::*;
 use osta_lexer::{base::*, tokens};
+use osta_func::*;
 
 use crate::{Parser, ParserError, ParserInput};
 
@@ -42,6 +43,41 @@ pub fn term<'a>() -> impl Parser<'a> {
         })
 }
 
+macro_rules! defer {
+    ($d:expr) => {{
+        move |input| $d.apply(input)
+    }};
+}
+
+pub fn expr<'a>() -> impl Parser<'a> {
+    (move |mut input| {
+        let (result, mut input) = term().apply(input);
+        if let Ok((left_node_ref, _)) = result {
+            let (Ok(token), rest) = tokens::plus().apply(input.input) else {
+                return (Err(ParserError::Unknown), input)
+            };
+            input.input = rest;
+
+            if let (Ok((right_node_ref, _)), input) = expr().apply(input.clone()) {
+                let mut builder = input.builder.borrow_mut();
+                let op_ref = builder.push_data(Data::Token(token));
+                let expr_ref = builder.push_node(NodeKind::BinExpr {
+                    left: left_node_ref,
+                    op: op_ref,
+                    right: right_node_ref
+                 }, NULL_REF);
+                drop(builder);
+                
+                (Ok((expr_ref, None)), input)  
+            } else {
+                return (Err(ParserError::Unknown), input.clone())
+            }
+        } else {
+            return (Err(ParserError::Unknown), input.clone())
+        }
+    }).or(term())
+}
+
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
 // should be on osta-ast, but in osta-ast we don't have any real parser to test so for now their
 // tests live within rules
@@ -64,7 +100,7 @@ mod tests {
 
     macro_rules! assert_ast {
         ($p:expr, $input:expr, $nodes:pat, $datas:pat) => {{
-            let (_, rest) = $p.apply($input);
+            let (_, rest) = dbg!($p.apply($input));
 
             // NOTE(cdecompilador): using matches! here may make some literal matching painful
             // for example we can't write !0 inside
@@ -123,5 +159,26 @@ mod tests {
             ]
         );
         assert_eq!(rest.input, " $");
+    }
+
+    #[test]
+    fn expr() {
+        let input = input!("123 + 456");
+        let rest = assert_ast!(
+            super::expr(), input,
+            [
+                Node { kind: NodeKind::IntegerLiteral(0), .. },
+                Node { kind: NodeKind::Term(0), .. },
+                Node { kind: NodeKind::IntegerLiteral(1), .. },
+                Node { kind: NodeKind::Term(2), .. },
+                Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, .. }
+            ],
+            [
+                Data::Token(Token { kind: TokenKind::Int, .. }),
+                Data::Token(Token { kind: TokenKind::Int, .. }),
+                Data::Token(Token { kind: TokenKind::Plus, .. })
+            ]
+        );
+        assert_eq!(rest.input, "");
     }
 }
