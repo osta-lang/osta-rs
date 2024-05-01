@@ -1,13 +1,13 @@
 use osta_ast::*;
-use osta_lexer::{base::*, tokens};
 use osta_func::*;
+use osta_lexer::{base::*, tokens};
 
 use crate::{Parser, ParserError, ParserInput};
 
 fn token<'a, E, F>(emitter: E, map_fn: F) -> impl Parser<'a>
-where
-    E: TokenEmitter<'a>,
-    F: Fn(DataRef) -> NodeKind + Copy + 'a
+    where
+        E: TokenEmitter<'a>,
+        F: Fn(DataRef) -> NodeKind + Copy + 'a
 {
     move |input: ParserInput<'a>| {
         let (result, rest) = emitter.apply(input.input);
@@ -17,7 +17,7 @@ where
                 let data_ref = builder.push_data(Data::Token(out));
                 let node_ref = builder.push_node(map_fn(data_ref), !0);
                 (Ok((node_ref, Some(data_ref))), ParserInput { input: rest, builder: input.builder.clone() })
-            },
+            }
             Err(err) => (Err(ParserError::TokenizerError(err)), input)
         }
     }
@@ -50,34 +50,29 @@ macro_rules! defer {
 }
 
 pub fn expr<'a>() -> impl Parser<'a> {
-    (move |mut input| {
-        let (result, mut input) = term().apply(input);
-        if let Ok((left_node_ref, _)) = result {
-            let (Ok(token), rest) = tokens::plus().apply(input.input) else {
-                return (Err(ParserError::Unknown), input)
+    term().and(move |(left_node_ref, _)| move |mut input: ParserInput<'a>| {
+            let (op_result, rest) = tokens::plus()
+                .map_err(ParserError::TokenizerError)
+                .apply(input.input);
+            let token = match op_result {
+                Ok(token) => token,
+                Err(err) => return (Err(err), input)
             };
             input.input = rest;
-
-            if let (Ok((right_node_ref, _)), input) = expr().apply(input.clone()) {
+            expr().and(move |(right_node_ref, _)| move |input: ParserInput<'a>| {
                 let mut builder = input.builder.borrow_mut();
-                let op_ref = builder.push_data(Data::Token(token));
-                let expr_ref = builder.push_node(NodeKind::BinExpr {
+                let expr_kind = NodeKind::BinExpr {
                     left: left_node_ref,
-                    op: op_ref,
+                    op: builder.push_data(Data::Token(token)),
                     right: right_node_ref
-                 }, NULL_REF);
+                };
+                let expr_ref = builder.push_node(expr_kind, !0);
                 builder.ast.nodes[left_node_ref].parent = expr_ref;
                 builder.ast.nodes[right_node_ref].parent = expr_ref;
                 drop(builder);
-                
-                (Ok((expr_ref, None)), input)  
-            } else {
-                return (Err(ParserError::Unknown), input.clone())
-            }
-        } else {
-            return (Err(ParserError::Unknown), input.clone())
-        }
-    }).or(term())
+                (Ok((expr_ref, None)), input)
+            }).apply(input)
+        }).or(term())
 }
 
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
@@ -118,7 +113,7 @@ mod tests {
             rest
         }};
     }
-    
+
     #[test]
     fn test_integer() {
         let input = input!("123");
