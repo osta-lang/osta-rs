@@ -32,6 +32,25 @@ where
     }
 }
 
+#[macro_export]
+macro_rules! do_m {
+    ($monad:expr ; return $r:expr ;) => {
+        $monad.map(move |_| $r)
+    };
+
+    ($monad:expr) => {
+        $monad
+    };
+
+    ($binding:ident = $x:expr ; $($r:tt)*) => {
+        $x.and_then(move |$binding| $crate::do_m!($($r)*))
+    };
+
+    ($x:expr ; $($r:tt)*)=> {
+        $x.and_then(move |_| $crate::do_m!($($r)*))
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

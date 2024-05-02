@@ -82,6 +82,29 @@ where
     M: StateMonad<'a, In, Result<Out, Err>> + Sized,
 {}
 
+#[macro_export]
+macro_rules! do_fallible_m {
+    (return <$o:ty, $e:ty> $r:expr ;) => {
+        move |rest| (Ok::<$o, $e>($r), rest)
+    };
+
+    (return $r:expr ;) => {
+        move |rest| (Ok($r), rest)
+    };
+
+    ($monad:expr) => {
+        $monad
+    };
+
+    ($binding:ident = $x:expr ; $($r:tt)*) => {
+        FallibleStateMonad::and_then($x, move |$binding| $crate::do_fallible_m!($($r)*))
+    };
+
+    ($x:expr ; $($r:tt)*) => {
+        FallibleStateMonad::and_then($x, move |_| $crate::do_fallible_m!($($r)*))
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,5 +144,25 @@ mod tests {
         let (out, rest) = monad.apply("foo");
         assert_eq!(out, Err(2));
         assert_eq!(rest, "oo");
+    }
+
+    #[test]
+    fn test_do<'a>() {
+        let monad = |input: &'a str| {
+            let (out, rest) = input.split_at(input.len() >> 1);
+            (Ok::<usize, ()>(out.len()), rest)
+        };
+
+        let (result, rest) = do_fallible_m! {
+            a = monad;
+            b = monad;
+            return <_, ()> (a, b);
+        }.map_err(move |err| err.unwrap()).apply("aaaab");
+
+        let (a, b) = result.unwrap();
+
+        assert_eq!(a, 2);
+        assert_eq!(b, 1);
+        assert_eq!(rest, "ab");
     }
 }
