@@ -30,6 +30,7 @@ macro_rules! emitter {
 emitter!(kw_while, keyword("while", TokenKind::While));
 emitter!(kw_if, keyword("if", TokenKind::If));
 emitter!(kw_else, keyword("else", TokenKind::Else));
+emitter!(kw_return, keyword("return", TokenKind::Return));
 emitter!(integer, regex(&RE_INT, TokenKind::Int)
     .map_err(|err| TokenizerError {
         found: err.found,

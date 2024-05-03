@@ -12,6 +12,7 @@ pub enum TokenKind {
     While,
     If,
     Else,
+    Return,
 
     // Single character tokens
     Plus,
@@ -39,5 +40,5 @@ pub enum TokenKind {
     Eof,
 
     #[cfg(test)]
-    Test
+    Test,
 }

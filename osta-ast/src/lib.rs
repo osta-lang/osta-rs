@@ -18,7 +18,8 @@ pub enum NodeKind {
     Stmt { child: NodeRef, next: Option<NodeRef> },
     ExprStmt { expr: NodeRef },
     AssignStmt { name: NodeRef, expr: NodeRef },
-    Block { first: Option<NodeRef> }
+    ReturnStmt { expr: NodeRef },
+    Block { first: Option<NodeRef> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -174,6 +175,13 @@ impl<'a> AstBuilder<'a> {
             expr
         }, NULL_REF);
         self.ast.nodes[name].parent = node_ref;
+        self.ast.nodes[expr].parent = node_ref;
+
+        node_ref
+    }
+
+    pub fn push_return_stmt(&mut self, expr: NodeRef) -> NodeRef {
+        let node_ref = self.push_node(NodeKind::ReturnStmt { expr }, NULL_REF);
         self.ast.nodes[expr].parent = node_ref;
 
         node_ref
