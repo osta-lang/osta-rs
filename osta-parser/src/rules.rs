@@ -95,23 +95,27 @@ pub fn term<'a>() -> impl Parser<'a> {
         with_builder(move |mut builder| {
             (builder.push_unary(token, child_ref), None)
         });
+    }).or(do_parse! {
+        (child_ref, _) = defer!(block());
+        build_term(child_ref);
     })
 }
 
 pub fn params<'a>() -> impl Parser<'a> {
-    (do_parse! {
+    do_parse! {
         (expr_ref, _) = expr();
-        from_emitter(tokens::comma());
-        (next_ref, _) = defer!(params());
+        (next_ref, _) = do_parse! {
+            from_emitter(tokens::comma());
+            defer!(params());
+        }.optional();
         with_builder(move |mut builder| {
-            (builder.push_param(expr_ref, Some(next_ref)), None)
+            if next_ref == NULL_REF {
+                (builder.push_param(expr_ref, None), None)
+            } else {
+                (builder.push_param(expr_ref, Some(next_ref)), None)
+            }
         });
-    }).or(do_parse! {
-        (expr_ref, _) = expr();
-        with_builder(move |mut builder| {
-            (builder.push_param(expr_ref, None), None)
-        });
-    })
+    }
 }
 
 pub fn function_call_expr<'a>() -> impl Parser<'a> {
@@ -119,15 +123,15 @@ pub fn function_call_expr<'a>() -> impl Parser<'a> {
         (name, _) = identifier();
         from_emitter(tokens::lparen());
         do_parse! {
+            from_emitter(tokens::rparen());
+            with_builder(move |mut builder| {
+                (builder.push_function_call_expr(name, None), None)
+            });
+        }.or(do_parse! {
             (params_ref, _) = params();
             from_emitter(tokens::rparen());
             with_builder(move |mut builder| {
                 (builder.push_function_call_expr(name, Some(params_ref)), None)
-            });
-        }.or(do_parse! {
-            from_emitter(tokens::rparen());
-            with_builder(move |mut builder| {
-                (builder.push_function_call_expr(name, None), None)
             });
         });
     )
@@ -136,7 +140,7 @@ pub fn function_call_expr<'a>() -> impl Parser<'a> {
 pub fn expr<'a>() -> impl Parser<'a> {
     defer!(function_call_expr()).or(do_parse! {
         (left_ref, _) = term();
-        token = from_emitter(tokens::plus());
+        token = from_emitter(tokens::bin_op());
         (right_ref, _) = defer!(expr());
         with_builder(move |mut builder| {
             (builder.push_bin_expr(left_ref, token, right_ref), None)
@@ -183,18 +187,13 @@ pub fn return_stmt<'a>() -> impl Parser<'a> {
 }
 
 pub fn stmt<'a>() -> impl Parser<'a> {
-    expr_stmt().or(assign_stmt())
+    expr_stmt().or(assign_stmt()).or(return_stmt())
 }
 
 pub fn stmts_in_block<'a>() -> impl Parser<'a> {
     do_parse! {
         (stmt_ref, _) = stmt();
-        (next_ref, _) = defer!(stmts_in_block()).or(do_parse! {
-            (return_ref, _) = return_stmt();
-            with_builder(move |mut builder| {
-                (builder.push_stmt(return_ref, None), None)
-            });
-        }).optional();
+        (next_ref, _) = defer!(stmts_in_block()).optional();
         with_builder(move |mut builder| {
             if next_ref == NULL_REF {
                 (builder.push_stmt(stmt_ref, None), None)
@@ -328,6 +327,22 @@ mod tests {
             [
                 Data::Token(Token { kind: TokenKind::Int, .. }),
                 Data::Token(Token { kind: TokenKind::Minus, .. })
+            ]
+        );
+
+        let input = input!("{123}");
+        assert_ast!(
+            super::term(), input,
+            [
+                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
+                Node { kind: NodeKind::Term(0), parent: 2 },
+                Node { kind: NodeKind::ReturnStmt { expr: 1 }, parent: 3 },
+                Node { kind: NodeKind::Stmt { child: 2, next: None }, parent: 4 },
+                Node { kind: NodeKind::Block { first: Some(3) }, parent: 5 },
+                Node { kind: NodeKind::Term(4), parent: NULL_REF }
+            ],
+            [
+                Data::Token(Token { kind: TokenKind::Int, .. }),
             ]
         );
     }
