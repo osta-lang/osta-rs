@@ -82,26 +82,37 @@ where
     M: StateMonad<'a, In, Result<Out, Err>> + Sized,
 {}
 
+/// Do-notation syntax sugar, it lets you execute monads in imperative-like
+/// order by building a new monad that returns either the result of all the 
+/// "statements" or the first error that occured
 #[macro_export]
-macro_rules! do_fallible_m {
-    (return <$o:ty, $e:ty> $r:expr ;) => {
+macro_rules! do_fallible {
+    (return <$o:ty, $e:ty> $r:expr) => {
         move |rest| (Ok::<$o, $e>($r), rest)
     };
 
-    (return $r:expr ;) => {
+    (return $r:expr) => {
         move |rest| (Ok($r), rest)
     };
 
-    ($monad:expr) => {
+    ($monad:expr ;) => {
         $monad
     };
 
-    ($binding:ident = $x:expr ; $($r:tt)*) => {
-        FallibleStateMonad::and_then($x, move |$binding| $crate::do_fallible_m!($($r)*))
+    ($binding:pat = $x:expr ; $($r:tt)*) => {
+        FallibleStateMonad::and_then($x, move |$binding| $crate::do_fallible!($($r)*))
+            .map_err(move |err| match err {
+                osta_data::either::Either::Left(l) => l,
+                osta_data::either::Either::Right(r) => r
+            })
     };
 
     ($x:expr ; $($r:tt)*) => {
-        FallibleStateMonad::and_then($x, move |_| $crate::do_fallible_m!($($r)*))
+        FallibleStateMonad::and_then($x, move |_| $crate::do_fallible!($($r)*))
+            .map_err(move |err| match err {
+                osta_data::either::Either::Left(l) => l,
+                osta_data::either::Either::Right(r) => r
+            })
     };
 }
 
@@ -153,11 +164,11 @@ mod tests {
             (Ok::<usize, ()>(out.len()), rest)
         };
 
-        let (result, rest) = do_fallible_m! {
+        let (result, rest) = do_fallible! {
             a = monad;
             b = monad;
-            return <_, ()> (a, b);
-        }.map_err(move |err| err.unwrap()).apply("aaaab");
+            return <_, ()> (a, b)
+        }.apply("aaaab");
 
         let (a, b) = result.unwrap();
 

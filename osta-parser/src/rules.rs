@@ -1,3 +1,5 @@
+use std::cell::RefMut;
+
 use osta_ast::*;
 use osta_func::*;
 use osta_lexer::{base::*, tokens};
@@ -37,12 +39,35 @@ fn token<'a, E, F>(emitter: E, map_fn: F) -> impl Parser<'a>
     }
 }
 
+/// Non-fallible utility combinator that lets you take a mutable reference to the AstBuilder
+// NOTE(cdecompilador): If we do typing on a separate part of the nodes in a attrbute-like 
+// way we could return from just the node ref, which in fact is the only thing we use on later stages
+pub fn with_builder<'a, F>(with_builder_fn: F) -> impl Parser<'a> 
+where 
+    F: Fn(RefMut<'_, AstBuilder<'a>>) -> (NodeRef, Option<DataRef>) + Copy + 'a
+{
+    move |input: ParserInput<'a>| {
+        let builder = input.builder.borrow_mut();
+        (Ok(with_builder_fn(builder)), input)
+    }
+} 
+
 pub fn integer<'a>() -> impl Parser<'a> {
-    token(tokens::integer(), |data_ref| NodeKind::IntegerLiteral(data_ref))
+    do_fallible! {
+        token = from_emitter(tokens::integer());
+        with_builder(move |mut builder| {
+            builder.push_integer(token)
+        });
+    }
 }
 
 pub fn identifier<'a>() -> impl Parser<'a> {
-    token(tokens::identifier(), |data_ref| NodeKind::Identifier(data_ref))
+    do_fallible! {
+        token = from_emitter(tokens::identifier());
+        with_builder(move |mut builder| {
+            builder.push_identifier(token) 
+        });
+    }
 }
 
 macro_rules! defer {
@@ -52,62 +77,37 @@ macro_rules! defer {
 }
 
 pub fn term<'a>() -> impl Parser<'a> {
-    integer().or(identifier())
-        .and(move |(pre_node_ref, _)| move |input: ParserInput<'a>| {
-            let mut builder = input.builder.borrow_mut();
-            let node_ref = builder.push_node(NodeKind::Term(pre_node_ref), !0);
-            builder.ast.nodes[pre_node_ref].parent = node_ref;
-            drop(builder);
-            (Ok((node_ref, None)), input)
-        })
-        .or(
-            sequence!(
-                ParserInput<'a>,
-                from_emitter(tokens::lparen()),
-                defer!(expr()),
-                from_emitter(tokens::rparen())
-            )
-                .map_err(|err| err.unwrap())
-                .map_out(|(_, (child_ref, _), _)| (child_ref, None))
-        )
-        .or(sequence!(
-                ParserInput<'a>,
-                from_emitter(tokens::unary_op()),
-                defer!(term())
-            )
-                .map_err(|err| err.unwrap())
-                .map_out_with_input(|(token, (child_ref, _)), input| {
-                    let mut builder = input.builder.borrow_mut();
-                    let op_ref = builder.push_data(Data::Token(token));
-                    let node_ref = builder.push_node(NodeKind::UnaryTerm { op: op_ref, child: child_ref }, !0);
-                    builder.ast.nodes[child_ref].parent = node_ref;
-                    (node_ref, Some(op_ref))
-                }),
-        )
+    let build_term = move |child_ref| with_builder(move |mut builder| {
+        (builder.push_term(child_ref), None)
+    });
+    
+    do_fallible! {
+        (child_ref, _) = integer();
+        build_term(child_ref);
+    }.or(do_fallible! {
+        (child_ref, _) = identifier();
+        build_term(child_ref);
+    }).or(do_fallible! {
+        from_emitter(tokens::lparen()); (child_ref, _) = defer!(expr()); from_emitter(tokens::rparen());
+        build_term(child_ref);
+    }).or(do_fallible! {
+        token = from_emitter(tokens::unary_op());
+        (child_ref, _) = defer!(term());
+        with_builder(move |mut builder| {
+            (builder.push_unary(token, child_ref), None)
+        });
+    })
 }
 
 pub fn expr<'a>() -> impl Parser<'a> {
-    sequence!(
-        ParserInput<'a>,
-        term(),
-        from_emitter(tokens::plus()),
-        defer!(expr())
-    )
-        .map_err(|err| err.unwrap())
-        .map_out_with_input(|((left_ref, _), token, (right_ref, _)), input| {
-            let mut builder = input.builder.borrow_mut();
-            let expr_kind = NodeKind::BinExpr {
-                left: left_ref,
-                op: builder.push_data(Data::Token(token)),
-                right: right_ref,
-            };
-            let expr_ref = builder.push_node(expr_kind, !0);
-            builder.ast.nodes[left_ref].parent = expr_ref;
-            builder.ast.nodes[right_ref].parent = expr_ref;
-            drop(builder);
-            (expr_ref, None::<DataRef>)
-        })
-        .or(term())
+    do_fallible! {
+        (left_ref, _) = term();
+        token = from_emitter(tokens::plus());
+        (right_ref, _) = defer!(expr());
+        with_builder(move |mut builder| {
+            (builder.push_bin_expr(left_ref, token, right_ref), None)
+        });
+    }.or(term())
 }
 
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
@@ -155,7 +155,7 @@ mod tests {
         assert_ast!(
             super::integer(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), .. }
+                Node { kind: NodeKind::IntegerLiteral(0), parent: NULL_REF }
             ], 
             [
                 Data::Token(Token { kind: TokenKind::Int, .. })
@@ -185,7 +185,8 @@ mod tests {
             super::term(), input,
             [
                 Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
-                Node { kind: NodeKind::Term(0), parent: NULL_REF },
+                Node { kind: NodeKind::Term(0), parent: 2 },
+                Node { kind: NodeKind::Term(1), parent: NULL_REF }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. })
@@ -200,7 +201,8 @@ mod tests {
                 Node { kind: NodeKind::Term(0), parent: 4 },
                 Node { kind: NodeKind::Identifier(1), parent: 3 },
                 Node { kind: NodeKind::Term(2), parent:  4 },
-                Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, parent: NULL_REF },
+                Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, parent: 5 },
+                Node { kind: NodeKind::Term(4), parent: NULL_REF }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. }),

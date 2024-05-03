@@ -1,4 +1,4 @@
-use osta_lexer::token::Token;
+use osta_lexer::token::*;
 
 pub type NodeRef = usize;
 pub type DataRef = usize;
@@ -67,6 +67,55 @@ impl<'a> AstBuilder<'a> {
     pub fn push_node(&mut self, kind: NodeKind, parent: NodeRef) -> NodeRef {
         let node_ref = self.ast.nodes.len();
         self.ast.nodes.push(Node { kind, parent });
+        node_ref
+    }
+
+    pub fn push_integer(&mut self, token: Token<'a>) -> (NodeRef, Option<DataRef>) {
+        debug_assert!(token.kind == TokenKind::Int);
+
+        let data_ref = self.push_data(Data::Token(token));
+        let node_ref = self.push_node(NodeKind::IntegerLiteral(data_ref), NULL_REF);
+        
+        (node_ref, Some(data_ref))
+    }
+
+    pub fn push_identifier(&mut self, token: Token<'a>) -> (NodeRef, Option<DataRef>) {
+        debug_assert!(token.kind == TokenKind::Identifier);
+
+        let data_ref = self.push_data(Data::Token(token));
+        let node_ref = self.push_node(NodeKind::Identifier(data_ref), NULL_REF);
+        
+        (node_ref, Some(data_ref))
+    }
+
+    pub fn push_term(&mut self, child_ref: NodeRef) -> NodeRef {
+        let node_ref = self.push_node(NodeKind::Term(child_ref), !0);
+        self.ast.nodes[child_ref].parent = node_ref;
+
+        node_ref
+    }
+
+    pub fn push_unary(&mut self, unary_op_token: Token<'a>, child_ref: NodeRef) -> NodeRef {
+        let unary_op_ref = self.push_data(Data::Token(unary_op_token));
+        let node_ref = self.push_node(NodeKind::UnaryTerm {
+            op: unary_op_ref,
+            child: child_ref
+        }, NULL_REF);
+        self.ast.nodes[child_ref].parent = node_ref;
+
+        node_ref
+    }
+
+    pub fn push_bin_expr(&mut self, left_ref: NodeRef, op_token: Token<'a>, right_ref: NodeRef) -> NodeRef {
+        let op_ref = self.push_data(Data::Token(op_token));
+        let node_ref = self.push_node(NodeKind::BinExpr {
+            left: left_ref,
+            op: op_ref,
+            right: right_ref
+        }, NULL_REF);
+        self.ast.nodes[left_ref].parent = node_ref;
+        self.ast.nodes[right_ref].parent = node_ref;
+
         node_ref
     }
 
