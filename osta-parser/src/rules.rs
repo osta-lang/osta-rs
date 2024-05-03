@@ -99,17 +99,6 @@ pub fn term<'a>() -> impl Parser<'a> {
     })
 }
 
-pub fn expr<'a>() -> impl Parser<'a> {
-    do_fallible! {
-        (left_ref, _) = term();
-        token = from_emitter(tokens::plus());
-        (right_ref, _) = defer!(expr());
-        with_builder(move |mut builder| {
-            (builder.push_bin_expr(left_ref, token, right_ref), None)
-        });
-    }.or(term())
-}
-
 pub fn params<'a>() -> impl Parser<'a> {
     do_fallible! {
         (expr_ref, _) = expr();
@@ -143,6 +132,43 @@ pub fn function_call_expr<'a>() -> impl Parser<'a> {
             });
         });
     )
+}
+
+pub fn expr<'a>() -> impl Parser<'a> {
+    defer!(function_call_expr()).or(do_fallible! {
+        (left_ref, _) = term();
+        token = from_emitter(tokens::plus());
+        (right_ref, _) = defer!(expr());
+        with_builder(move |mut builder| {
+            (builder.push_bin_expr(left_ref, token, right_ref), None)
+        });
+    }).or(term())
+}
+
+pub fn expr_stmt<'a>() -> impl Parser<'a> {
+    do_fallible! {
+        (expr_ref, _) = expr();
+        from_emitter(tokens::semicolon());
+        with_builder(move |mut builder| {
+            (builder.push_expr_stmt(expr_ref), None)
+        });
+    }
+}
+
+pub fn assign_stmt<'a>() -> impl Parser<'a> {
+    do_fallible! {
+        (name_ref, _) = identifier();
+        from_emitter(tokens::eq());
+        (expr_ref, _) = expr();
+        from_emitter(tokens::semicolon());
+        with_builder(move |mut builder| {
+            (builder.push_assign_stmt(name_ref, expr_ref), None)
+        });
+    }
+}
+
+pub fn stmt<'a>() -> impl Parser<'a> {
+    expr_stmt().or(assign_stmt())
 }
 
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
@@ -262,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn data_rollback() {
+    fn node_rollback() {
         let input = input!("foo $");
         let rest = assert_ast!(
             super::identifier().and(|_| super::integer()).or(super::identifier()), input,
@@ -277,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn expr() {
+    fn binary_expr() {
         let input = input!("123 + 456");
         let rest = assert_ast!(
             super::expr(), input,
@@ -346,6 +372,38 @@ mod tests {
                 Node { kind: NodeKind::Term(1), .. },
                 Node { kind: NodeKind::Param { child: 2, next: None }, .. },
                 Node { kind: NodeKind::FuncCallExpr { name: 0, params: Some(3) }, .. }
+            ],
+            [..]
+        );
+    }
+
+    #[test]
+    fn assign_stmt() {
+        let input = input!("a = 10;");
+        assert_ast!(
+            super::stmt(), input,
+            [
+                Node { kind: NodeKind::Identifier(0), .. },
+                Node { kind: NodeKind::IntegerLiteral(1), .. },
+                Node { kind: NodeKind::Term(1), .. },
+                Node { kind: NodeKind::AssignStmt { name: 0, expr: 2 }, ..}
+            ],
+            [..]
+        );
+    }
+
+    #[test]
+    fn expr_stmt() {
+        let input = input!("1 + exit();");
+        assert_ast!(
+            super::stmt(), input,
+            [
+                _,
+                _,
+                _,
+                Node { kind: NodeKind::FuncCallExpr { .. }, .. },
+                Node { kind: NodeKind::BinExpr { .. }, .. },
+                Node { kind: NodeKind::ExprStmt { expr: 4 }, .. }
             ],
             [..]
         );
