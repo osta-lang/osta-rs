@@ -12,7 +12,9 @@ pub enum NodeKind {
     BinExpr { left: NodeRef, op: DataRef, right: NodeRef },
     Term(NodeRef),
     UnaryTerm { op: DataRef, child: NodeRef },
-    FuncCall,
+    FuncCallExpr { name: NodeRef, params: Option<NodeRef> },
+    // NOTE(cdecompilador): this is like a linked list
+    Param { child: NodeRef, next: Option<NodeRef> }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,6 +72,12 @@ impl<'a> AstBuilder<'a> {
         node_ref
     }
 
+    pub fn push_data(&mut self, data: Data<'a>) -> DataRef {
+        let data_ref = self.ast.datas.len();
+        self.ast.datas.push(data);
+        data_ref
+    }
+
     pub fn push_integer(&mut self, token: Token<'a>) -> (NodeRef, Option<DataRef>) {
         debug_assert!(token.kind == TokenKind::Int);
 
@@ -119,11 +127,34 @@ impl<'a> AstBuilder<'a> {
         node_ref
     }
 
-    pub fn push_data(&mut self, data: Data<'a>) -> DataRef {
-        let data_ref = self.ast.datas.len();
-        self.ast.datas.push(data);
-        data_ref
+    pub fn push_param(&mut self, child_ref: NodeRef, next_ref: Option<NodeRef>) -> NodeRef {
+        let node_ref = self.push_node(NodeKind::Param {
+            child: child_ref,
+            next: next_ref
+        }, NULL_REF);
+        self.ast.nodes[child_ref].parent = node_ref;
+        if let Some(next_ref) = next_ref {
+            self.ast.nodes[next_ref].parent = node_ref;
+        }
+
+        node_ref
     }
+
+    pub fn push_function_call_expr(&mut self, name: NodeRef, params: Option<NodeRef>) -> NodeRef {
+        let node_ref = self.push_node(NodeKind::FuncCallExpr {
+            name,
+            params 
+        }, NULL_REF);
+        self.ast.nodes[name].parent = node_ref;
+        if let Some(params) = params {
+            self.ast.nodes[params].parent = node_ref;
+            // TODO(cdecompilador): should we iterate over all the params and set the func_call node
+            // as its parent to avoid indirection while traversing the tree bottom-up?
+        }
+
+        node_ref
+    }
+
 
     pub fn build(self) -> Ast<'a> {
         self.ast

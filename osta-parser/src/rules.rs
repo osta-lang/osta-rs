@@ -110,6 +110,41 @@ pub fn expr<'a>() -> impl Parser<'a> {
     }.or(term())
 }
 
+pub fn params<'a>() -> impl Parser<'a> {
+    do_fallible! {
+        (expr_ref, _) = expr();
+        from_emitter(tokens::comma());
+        (next_ref, _) = defer!(params());
+        with_builder(move |mut builder| {
+            (builder.push_param(expr_ref, Some(next_ref)), None)
+        });
+    }.or(do_fallible! {
+        (expr_ref, _) = expr();
+        with_builder(move |mut builder| {
+            (builder.push_param(expr_ref, None), None)
+        });
+    })
+}
+
+pub fn function_call_expr<'a>() -> impl Parser<'a> {
+    do_fallible!(
+        (name, _) = identifier();
+        from_emitter(tokens::lparen());
+        do_fallible! {
+            (params_ref, _) = params();
+            from_emitter(tokens::rparen());
+            with_builder(move |mut builder| {
+                (builder.push_function_call_expr(name, Some(params_ref)), None)
+            });
+        }.or(do_fallible! {
+            from_emitter(tokens::rparen());
+            with_builder(move |mut builder| {
+                (builder.push_function_call_expr(name, None), None)
+            });
+        });
+    )
+}
+
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
 // should be on osta-ast, but in osta-ast we don't have any real parser to test so for now their
 // tests live within rules
@@ -260,5 +295,59 @@ mod tests {
             ]
         );
         assert_eq!(rest.input, "");
+    }
+
+    #[test]
+    fn params() {
+        let input = input!("10");
+        assert_ast!(
+            super::params(), input,
+            [
+                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
+                Node { kind: NodeKind::Term(0), parent: 2 },
+                Node { kind: NodeKind::Param { child: 1, next: None }, parent: NULL_REF }
+            ],
+            [..]
+        );
+
+        let input = input!("10,foo");
+        assert_ast!(
+            super::params(), input,
+            [
+                Node { kind: NodeKind::IntegerLiteral(0), .. },
+                Node { kind: NodeKind::Term(0), .. },
+                Node { kind: NodeKind::Identifier(1), .. },
+                Node { kind: NodeKind::Term(2), .. },
+                Node { kind: NodeKind::Param { child: 3, next: None }, parent: 5 },
+                Node { kind: NodeKind::Param { child: 1, next: Some(4)}, parent: NULL_REF },
+            ],
+            [..]
+        );
+    }
+
+    #[test]
+    fn function_call_expr() {
+        let input = input!("exit()");
+        assert_ast!(
+            super::function_call_expr(), input,
+            [
+                Node { kind: NodeKind::Identifier(0), parent: 1 },
+                Node { kind: NodeKind::FuncCallExpr { name: 0, params: None }, .. }
+            ],
+            [..]
+        );
+
+        let input = input!("print(hello)");
+        assert_ast!(
+            super::function_call_expr(), input,
+            [
+                Node { kind: NodeKind::Identifier(0), parent: 4 },
+                Node { kind: NodeKind::Identifier(1), .. },
+                Node { kind: NodeKind::Term(1), .. },
+                Node { kind: NodeKind::Param { child: 2, next: None }, .. },
+                Node { kind: NodeKind::FuncCallExpr { name: 0, params: Some(3) }, .. }
+            ],
+            [..]
+        );
     }
 }
