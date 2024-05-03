@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use osta_ast::{AstBuilder, DataRef, NodeRef};
+use osta_ast::{AstBuilder, DataRef, NodeRef, NULL_REF};
 use osta_func::{FallibleStateMonad, StateMonad};
 use osta_lexer::token::TokenKind;
 
@@ -50,6 +50,16 @@ pub trait Parser<'a>: FallibleStateMonad<'a, ParserInput<'a>, ParserOutput<'a>, 
                         Err(err) => (Err(err), input.clone())
                     }
                 }
+            }
+        }
+    }
+
+    fn optional(self) -> impl Parser<'a> {
+        move |input: ParserInput<'a>| {
+            let (result, rest) = self.apply(input.clone());
+            match result {
+                Ok(out) => (Ok(out), rest),
+                Err(_) => (Ok((NULL_REF, None)), input)
             }
         }
     }
