@@ -2,6 +2,7 @@ use std::cell::RefMut;
 
 use osta_ast::*;
 use osta_func::*;
+use osta_func::foundational::optional;
 use osta_lexer::{base::*, tokens};
 use osta_lexer::token::Token;
 use osta_proc_macros::sequence;
@@ -165,8 +166,51 @@ pub fn assign_stmt<'a>() -> impl Parser<'a> {
     }
 }
 
-pub fn stmt<'a>() -> impl Parser<'a> {
+pub fn block_stmt<'a>() -> impl Parser<'a> {
     expr_stmt().or(assign_stmt())
+}
+
+pub fn inner_block<'a>() -> impl Parser<'a> {
+    do_parse! {
+        (stmt_ref, _) = block_stmt();
+        (next_ref, _) = defer!(inner_block());
+        with_builder(move |mut builder| {
+            if next_ref == NULL_REF {
+                (builder.push_stmt(stmt_ref, None), None)
+            } else {
+                (builder.push_stmt(stmt_ref, Some(next_ref)), None)
+            }
+        });
+    }.or(move |input| (Ok((NULL_REF, None)), input))
+}
+
+// NOTE(cdecompilador): this may result in O(2^n) not funny
+pub fn block<'a>() -> impl Parser<'a> {
+    do_parse! {
+        from_emitter(tokens::lbrace());
+        (first_stmt_ref, _) = inner_block();
+        (first_stmt_ref, _) = do_parse! {
+            (return_expr_ref, _) = expr();
+            from_emitter(tokens::rbrace());
+            with_builder(move |mut builder| {
+                if first_stmt_ref == NULL_REF {
+                    (builder.push_stmt(return_expr_ref, None), None)
+                } else {
+                    (builder.push_stmt(return_expr_ref, Some(first_stmt_ref)), None)
+                }
+            });
+        }.or(from_emitter(tokens::rbrace()).map_out(move |_| (first_stmt_ref, None)));
+        with_builder(move |mut builder| {
+            (builder.push_block(first_stmt_ref), None)
+        });
+    }.or(do_parse! {
+        from_emitter(tokens::lbrace());
+        (first_stmt_ref, _) = inner_block();
+        from_emitter(tokens::rbrace());
+        with_builder(move |mut builder| {
+            (builder.push_block(first_stmt_ref), None)
+        });
+    })
 }
 
 // TODO(cdecompilador): This tests testing Ast and AstBuilder don't follow SRP, so technically they
@@ -379,7 +423,7 @@ mod tests {
     fn assign_stmt() {
         let input = input!("a = 10;");
         assert_ast!(
-            super::stmt(), input,
+            super::block_stmt(), input,
             [
                 Node { kind: NodeKind::Identifier(0), .. },
                 Node { kind: NodeKind::IntegerLiteral(1), .. },
@@ -394,7 +438,7 @@ mod tests {
     fn expr_stmt() {
         let input = input!("1 + exit();");
         assert_ast!(
-            super::stmt(), input,
+            super::block_stmt(), input,
             [
                 _,
                 _,
@@ -406,4 +450,51 @@ mod tests {
             [..]
         );
     }
+
+    #[test]
+    fn block() {
+        let input = input!("{} ");
+        assert_ast!(
+            super::block(), input,
+            [
+               Node { kind: NodeKind::Block { first: None }, .. } 
+            ],
+            [..]
+        );
+
+        let input = input!("{ 1; 2; }");
+        assert_ast!(
+            super::block(), input,
+            [
+                _,
+                _,
+                Node { parent: 7, .. },
+                _,
+                _,
+                Node { parent: 6, .. },
+                Node { kind: NodeKind::Stmt { child: 5, next: None }, parent: 7 },
+                Node { kind: NodeKind::Stmt { child: 2, next: Some(6) }, parent: 8 },
+                Node { kind: NodeKind::Block { first: Some(7) }, .. }
+            ],
+            [..]
+        );
+
+        // NOTE(cdecompilador): the ordering is wrong
+        let input = input!("{ 1; 2; 3 }");
+        assert_ast!(
+            super::block(), input,
+            [
+                _,
+                _,
+                Node { parent: 7, .. },
+                _,
+                _,
+                Node { parent: 6, .. },
+                Node { kind: NodeKind::Stmt { child: 5, next: None }, parent: 7 },
+                Node { kind: NodeKind::Stmt { child: 2, next: Some(6) }, parent: 8 },
+                Node { kind: NodeKind::Block { first: Some(7) }, .. }
+            ],
+            [..]
+        );
+    } 
 }

@@ -15,8 +15,10 @@ pub enum NodeKind {
     FuncCallExpr { name: NodeRef, params: Option<NodeRef> },
     // NOTE(cdecompilador): this is like a linked list
     Param { child: NodeRef, next: Option<NodeRef> },
+    Stmt { child: NodeRef, next: Option<NodeRef> },
     ExprStmt { expr: NodeRef },
-    AssignStmt { name: NodeRef, expr: NodeRef }
+    AssignStmt { name: NodeRef, expr: NodeRef },
+    Block { first: Option<NodeRef> }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -173,6 +175,30 @@ impl<'a> AstBuilder<'a> {
         }, NULL_REF);
         self.ast.nodes[name].parent = node_ref;
         self.ast.nodes[expr].parent = node_ref;
+
+        node_ref
+    }
+
+    pub fn push_stmt(&mut self, child_ref: NodeRef, next_ref: Option<NodeRef>) -> NodeRef {
+        let node_ref = self.push_node(NodeKind::Stmt { child: child_ref, next: next_ref }, NULL_REF);
+        self.ast.nodes[child_ref].parent = node_ref;
+        if let Some(next_ref) = next_ref {
+            self.ast.nodes[next_ref].parent = node_ref;
+        }
+
+        node_ref
+    }
+
+    pub fn push_block(&mut self, first_stmt_ref: NodeRef) -> NodeRef {
+        let node_ref = self.push_node(
+            NodeKind::Block { 
+                first: if first_stmt_ref != NULL_REF { Some(first_stmt_ref)} else { None } 
+            },
+            NULL_REF
+        );
+        if first_stmt_ref != NULL_REF {
+            self.ast.nodes[first_stmt_ref].parent = node_ref;
+        }
 
         node_ref
     }
