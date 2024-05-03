@@ -101,18 +101,10 @@ macro_rules! do_fallible {
 
     ($binding:pat = $x:expr ; $($r:tt)*) => {
         FallibleStateMonad::and_then($x, move |$binding| $crate::do_fallible!($($r)*))
-            .map_err(move |err| match err {
-                osta_data::either::Either::Left(l) => l,
-                osta_data::either::Either::Right(r) => r
-            })
     };
 
     ($x:expr ; $($r:tt)*) => {
         FallibleStateMonad::and_then($x, move |_| $crate::do_fallible!($($r)*))
-            .map_err(move |err| match err {
-                osta_data::either::Either::Left(l) => l,
-                osta_data::either::Either::Right(r) => r
-            })
     };
 }
 

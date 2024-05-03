@@ -8,6 +8,10 @@ use osta_proc_macros::sequence;
 
 use crate::{Parser, ParserError, ParserInput};
 
+macro_rules! do_parse {
+    ($($r:tt)*) => { (do_fallible!($($r)*)).map_err(move |err| err.unwrap()) };
+}
+
 fn from_emitter<'a, E>(emitter: E) -> impl FallibleStateMonad<'a, ParserInput<'a>, Token<'a>, ParserError<'a>>
 where
     E: TokenEmitter<'a>
@@ -53,7 +57,7 @@ where
 } 
 
 pub fn integer<'a>() -> impl Parser<'a> {
-    do_fallible! {
+    do_parse! {
         token = from_emitter(tokens::integer());
         with_builder(move |mut builder| {
             builder.push_integer(token)
@@ -62,7 +66,7 @@ pub fn integer<'a>() -> impl Parser<'a> {
 }
 
 pub fn identifier<'a>() -> impl Parser<'a> {
-    do_fallible! {
+    do_parse! {
         token = from_emitter(tokens::identifier());
         with_builder(move |mut builder| {
             builder.push_identifier(token) 
@@ -70,27 +74,21 @@ pub fn identifier<'a>() -> impl Parser<'a> {
     }
 }
 
-macro_rules! defer {
-    ($d:expr) => {{
-        move |input| $d.apply(input)
-    }};
-}
-
 pub fn term<'a>() -> impl Parser<'a> {
     let build_term = move |child_ref| with_builder(move |mut builder| {
         (builder.push_term(child_ref), None)
     });
-    
-    do_fallible! {
+
+    (do_parse! {
         (child_ref, _) = integer();
         build_term(child_ref);
-    }.or(do_fallible! {
+    }).or(do_parse! {
         (child_ref, _) = identifier();
         build_term(child_ref);
-    }).or(do_fallible! {
+    }).or(do_parse! {
         from_emitter(tokens::lparen()); (child_ref, _) = defer!(expr()); from_emitter(tokens::rparen());
         build_term(child_ref);
-    }).or(do_fallible! {
+    }).or(do_parse! {
         token = from_emitter(tokens::unary_op());
         (child_ref, _) = defer!(term());
         with_builder(move |mut builder| {
@@ -100,14 +98,14 @@ pub fn term<'a>() -> impl Parser<'a> {
 }
 
 pub fn params<'a>() -> impl Parser<'a> {
-    do_fallible! {
+    (do_parse! {
         (expr_ref, _) = expr();
         from_emitter(tokens::comma());
         (next_ref, _) = defer!(params());
         with_builder(move |mut builder| {
             (builder.push_param(expr_ref, Some(next_ref)), None)
         });
-    }.or(do_fallible! {
+    }).or(do_parse! {
         (expr_ref, _) = expr();
         with_builder(move |mut builder| {
             (builder.push_param(expr_ref, None), None)
@@ -116,16 +114,16 @@ pub fn params<'a>() -> impl Parser<'a> {
 }
 
 pub fn function_call_expr<'a>() -> impl Parser<'a> {
-    do_fallible!(
+    do_parse!(
         (name, _) = identifier();
         from_emitter(tokens::lparen());
-        do_fallible! {
+        do_parse! {
             (params_ref, _) = params();
             from_emitter(tokens::rparen());
             with_builder(move |mut builder| {
                 (builder.push_function_call_expr(name, Some(params_ref)), None)
             });
-        }.or(do_fallible! {
+        }.or(do_parse! {
             from_emitter(tokens::rparen());
             with_builder(move |mut builder| {
                 (builder.push_function_call_expr(name, None), None)
@@ -135,7 +133,7 @@ pub fn function_call_expr<'a>() -> impl Parser<'a> {
 }
 
 pub fn expr<'a>() -> impl Parser<'a> {
-    defer!(function_call_expr()).or(do_fallible! {
+    defer!(function_call_expr()).or(do_parse! {
         (left_ref, _) = term();
         token = from_emitter(tokens::plus());
         (right_ref, _) = defer!(expr());
@@ -146,7 +144,7 @@ pub fn expr<'a>() -> impl Parser<'a> {
 }
 
 pub fn expr_stmt<'a>() -> impl Parser<'a> {
-    do_fallible! {
+    do_parse! {
         (expr_ref, _) = expr();
         from_emitter(tokens::semicolon());
         with_builder(move |mut builder| {
@@ -156,7 +154,7 @@ pub fn expr_stmt<'a>() -> impl Parser<'a> {
 }
 
 pub fn assign_stmt<'a>() -> impl Parser<'a> {
-    do_fallible! {
+    do_parse! {
         (name_ref, _) = identifier();
         from_emitter(tokens::eq());
         (expr_ref, _) = expr();

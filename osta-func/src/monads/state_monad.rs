@@ -51,6 +51,13 @@ macro_rules! do_m {
     };
 }
 
+#[macro_export]
+macro_rules! defer {
+    ($d:expr) => {{
+        move |input| $d.apply(input)
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
