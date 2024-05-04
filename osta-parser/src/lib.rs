@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use osta_ast::{AstBuilder, DataRef, NodeRef, NULL_REF};
-use osta_func::{FallibleStateMonad, StateMonad};
+use osta_ast::{AstBuilder, NodeRef};
+use osta_func::*;
 use osta_lexer::token::TokenKind;
 
 mod rules;
@@ -12,7 +12,7 @@ pub struct ParserInput<'a> {
     input: &'a str,
     builder: Rc<RefCell<AstBuilder<'a>>>
 }
-type ParserOutput<'a> = (NodeRef, Option<DataRef>);
+type ParserOutput<'a> = NodeRef;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ParserError<'a> {
@@ -22,6 +22,7 @@ pub enum ParserError<'a> {
 }
 
 pub trait Parser<'a>: FallibleStateMonad<'a, ParserInput<'a>, ParserOutput<'a>, ParserError<'a>> {
+    // FIXME(cdecompilador): we are not using it, should we remove it?
     fn and<P: Parser<'a> + 'a, F>(self, parser_factory: F) -> impl Parser<'a>
     where
         F: FnOnce(ParserOutput) -> P + Copy + 'a
@@ -59,7 +60,7 @@ pub trait Parser<'a>: FallibleStateMonad<'a, ParserInput<'a>, ParserOutput<'a>, 
             let (result, rest) = self.apply(input.clone());
             match result {
                 Ok(out) => (Ok(out), rest),
-                Err(_) => (Ok((NULL_REF, None)), input)
+                Err(_) => (Ok(NodeRef::NULL), input)
             }
         }
     }

@@ -2,10 +2,8 @@ use std::cell::RefMut;
 
 use osta_ast::*;
 use osta_func::*;
-use osta_func::foundational::optional;
 use osta_lexer::{base::*, tokens};
 use osta_lexer::token::Token;
-use osta_proc_macros::sequence;
 
 use crate::{Parser, ParserError, ParserInput};
 
@@ -25,31 +23,12 @@ where
     }
 }
 
-fn token<'a, E, F>(emitter: E, map_fn: F) -> impl Parser<'a>
-    where
-        E: TokenEmitter<'a>,
-        F: Fn(DataRef) -> NodeKind + Copy + 'a
-{
-    move |input: ParserInput<'a>| {
-        let (result, rest) = emitter.apply(input.input);
-        match result {
-            Ok(out) => {
-                let mut builder = input.builder.borrow_mut();
-                let data_ref = builder.push_data(Data::Token(out));
-                let node_ref = builder.push_node(map_fn(data_ref), !0);
-                (Ok((node_ref, Some(data_ref))), ParserInput { input: rest, builder: input.builder.clone() })
-            }
-            Err(err) => (Err(ParserError::TokenizerError(err)), input)
-        }
-    }
-}
-
 /// Non-fallible utility combinator that lets you take a mutable reference to the AstBuilder
 // NOTE(cdecompilador): If we do typing on a separate part of the nodes in a attrbute-like 
 // way we could return from just the node ref, which in fact is the only thing we use on later stages
 pub fn with_builder<'a, F>(with_builder_fn: F) -> impl Parser<'a> 
 where 
-    F: Fn(RefMut<'_, AstBuilder<'a>>) -> (NodeRef, Option<DataRef>) + Copy + 'a
+    F: Fn(RefMut<'_, AstBuilder<'a>>) -> NodeRef + Copy + 'a
 {
     move |input: ParserInput<'a>| {
         let builder = input.builder.borrow_mut();
@@ -77,61 +56,57 @@ pub fn identifier<'a>() -> impl Parser<'a> {
 
 pub fn term<'a>() -> impl Parser<'a> {
     let build_term = move |child_ref| with_builder(move |mut builder| {
-        (builder.push_term(child_ref), None)
+        builder.push_term(child_ref)
     });
 
     (do_parse! {
-        (child_ref, _) = integer();
+        child_ref = integer();
         build_term(child_ref);
     }).or(do_parse! {
-        (child_ref, _) = identifier();
+        child_ref = identifier();
         build_term(child_ref);
     }).or(do_parse! {
-        from_emitter(tokens::lparen()); (child_ref, _) = defer!(expr()); from_emitter(tokens::rparen());
+        from_emitter(tokens::lparen()); child_ref = defer!(expr()); from_emitter(tokens::rparen());
         build_term(child_ref);
     }).or(do_parse! {
         token = from_emitter(tokens::unary_op());
-        (child_ref, _) = defer!(term());
+        child_ref = defer!(term());
         with_builder(move |mut builder| {
-            (builder.push_unary(token, child_ref), None)
+            builder.push_unary(token, child_ref)
         });
     }).or(do_parse! {
-        (child_ref, _) = defer!(block());
+        child_ref = defer!(block());
         build_term(child_ref);
     })
 }
 
 pub fn params<'a>() -> impl Parser<'a> {
     do_parse! {
-        (expr_ref, _) = expr();
-        (next_ref, _) = do_parse! {
+        expr_ref = expr();
+        next_ref = do_parse! {
             from_emitter(tokens::comma());
             defer!(params());
         }.optional();
         with_builder(move |mut builder| {
-            if next_ref == NULL_REF {
-                (builder.push_param(expr_ref, None), None)
-            } else {
-                (builder.push_param(expr_ref, Some(next_ref)), None)
-            }
+            builder.push_param(expr_ref, next_ref)
         });
     }
 }
 
 pub fn function_call_expr<'a>() -> impl Parser<'a> {
     do_parse!(
-        (name, _) = identifier();
+        name_ref = identifier();
         from_emitter(tokens::lparen());
         do_parse! {
             from_emitter(tokens::rparen());
             with_builder(move |mut builder| {
-                (builder.push_function_call_expr(name, None), None)
+                builder.push_function_call_expr(name_ref, NodeRef::NULL)
             });
         }.or(do_parse! {
-            (params_ref, _) = params();
+            params_ref = params();
             from_emitter(tokens::rparen());
             with_builder(move |mut builder| {
-                (builder.push_function_call_expr(name, Some(params_ref)), None)
+                builder.push_function_call_expr(name_ref, params_ref)
             });
         });
     )
@@ -139,33 +114,33 @@ pub fn function_call_expr<'a>() -> impl Parser<'a> {
 
 pub fn expr<'a>() -> impl Parser<'a> {
     defer!(function_call_expr()).or(do_parse! {
-        (left_ref, _) = term();
+        left_ref = term();
         token = from_emitter(tokens::bin_op());
-        (right_ref, _) = defer!(expr());
+        right_ref = defer!(expr());
         with_builder(move |mut builder| {
-            (builder.push_bin_expr(left_ref, token, right_ref), None)
+            builder.push_bin_expr(left_ref, token, right_ref)
         });
     }).or(term())
 }
 
 pub fn expr_stmt<'a>() -> impl Parser<'a> {
     do_parse! {
-        (expr_ref, _) = expr();
+        expr_ref = expr();
         from_emitter(tokens::semicolon());
         with_builder(move |mut builder| {
-            (builder.push_expr_stmt(expr_ref), None)
+            builder.push_expr_stmt(expr_ref)
         });
     }
 }
 
 pub fn assign_stmt<'a>() -> impl Parser<'a> {
     do_parse! {
-        (name_ref, _) = identifier();
+        name_ref = identifier();
         from_emitter(tokens::eq());
-        (expr_ref, _) = expr();
+        expr_ref = expr();
         from_emitter(tokens::semicolon());
         with_builder(move |mut builder| {
-            (builder.push_assign_stmt(name_ref, expr_ref), None)
+            builder.push_assign_stmt(name_ref, expr_ref)
         });
     }
 }
@@ -173,15 +148,15 @@ pub fn assign_stmt<'a>() -> impl Parser<'a> {
 pub fn return_stmt<'a>() -> impl Parser<'a> {
     (do_parse! {
         from_emitter(tokens::kw_return());
-        (expr_ref, _) = expr();
+        expr_ref = expr();
         from_emitter(tokens::semicolon());
         with_builder(move |mut builder| {
-            (builder.push_return_stmt(expr_ref), None)
+            builder.push_return_stmt(expr_ref)
         });
     }).or(do_parse! {
-        (expr_ref, _) = expr();
+        expr_ref = expr();
         with_builder(move |mut builder| {
-            (builder.push_return_stmt(expr_ref), None)
+            builder.push_return_stmt(expr_ref)
         });
     })
 }
@@ -192,14 +167,10 @@ pub fn stmt<'a>() -> impl Parser<'a> {
 
 pub fn stmts_in_block<'a>() -> impl Parser<'a> {
     do_parse! {
-        (stmt_ref, _) = stmt();
-        (next_ref, _) = defer!(stmts_in_block()).optional();
+        stmt_ref = stmt();
+        next_ref = defer!(stmts_in_block()).optional();
         with_builder(move |mut builder| {
-            if next_ref == NULL_REF {
-                (builder.push_stmt(stmt_ref, None), None)
-            } else {
-                (builder.push_stmt(stmt_ref, Some(next_ref)), None)
-            }
+            builder.push_stmt(stmt_ref, next_ref)
         });
     }
 }
@@ -207,10 +178,10 @@ pub fn stmts_in_block<'a>() -> impl Parser<'a> {
 pub fn block<'a>() -> impl Parser<'a> {
     do_parse! {
         from_emitter(tokens::lbrace());
-        (first_stmt_ref, _) = stmts_in_block().optional();
+        first_stmt_ref = stmts_in_block().optional();
         from_emitter(tokens::rbrace());
         with_builder(move |mut builder| {
-            (builder.push_block(first_stmt_ref), None)
+            builder.push_block(first_stmt_ref)
         });
     }
 }
@@ -260,7 +231,7 @@ mod tests {
         assert_ast!(
             super::integer(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), parent: NULL_REF }
+                Node { kind: NodeKind::IntegerLiteral(DataRef(0)), parent_ref: NodeRef::NULL }
             ], 
             [
                 Data::Token(Token { kind: TokenKind::Int, .. })
@@ -274,7 +245,7 @@ mod tests {
         let rest = assert_ast!(
             super::identifier(), input,
             [
-                Node { kind: NodeKind::Identifier(0), .. }
+                Node { kind: NodeKind::Identifier(DataRef(0)), .. }
             ], 
             [
                 Data::Token(Token { kind: TokenKind::Identifier, .. })
@@ -289,9 +260,9 @@ mod tests {
         assert_ast!(
             super::term(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
-                Node { kind: NodeKind::Term(0), parent: 2 },
-                Node { kind: NodeKind::Term(1), parent: NULL_REF }
+                Node { kind: NodeKind::IntegerLiteral(DataRef(0)), parent_ref: NodeRef(1) },
+                Node { kind: NodeKind::Term(NodeRef(0)), parent_ref: NodeRef(2) },
+                Node { kind: NodeKind::Term(NodeRef(1)), parent_ref: NodeRef::NULL }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. })
@@ -302,12 +273,16 @@ mod tests {
         assert_ast!(
             super::term(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
-                Node { kind: NodeKind::Term(0), parent: 4 },
-                Node { kind: NodeKind::Identifier(1), parent: 3 },
-                Node { kind: NodeKind::Term(2), parent:  4 },
-                Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, parent: 5 },
-                Node { kind: NodeKind::Term(4), parent: NULL_REF }
+                Node { kind: NodeKind::IntegerLiteral(DataRef(0)), parent_ref: NodeRef(1) },
+                Node { kind: NodeKind::Term(NodeRef(0)), parent_ref: NodeRef(4) },
+                Node { kind: NodeKind::Identifier(DataRef(1)), parent_ref: NodeRef(3) },
+                Node { kind: NodeKind::Term(NodeRef(2)), parent_ref:  NodeRef(4) },
+                Node { kind: NodeKind::BinExpr { 
+                    left_ref: NodeRef(1), op_ref: DataRef(2), right_ref: NodeRef(3)
+                    }, 
+                    parent_ref: NodeRef(5)
+                },
+                Node { kind: NodeKind::Term(NodeRef(4)), parent_ref: NodeRef::NULL }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. }),
@@ -320,9 +295,9 @@ mod tests {
         assert_ast!(
             super::term(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
-                Node { kind: NodeKind::Term(0), parent: 2 },
-                Node { kind: NodeKind::UnaryTerm { op: 1, child: 1 }, parent: NULL_REF }
+                Node { kind: NodeKind::IntegerLiteral(DataRef(0)), parent_ref: NodeRef(1) },
+                Node { kind: NodeKind::Term(NodeRef(0)), parent_ref: NodeRef(2) },
+                Node { kind: NodeKind::UnaryTerm { op_ref: DataRef(1), child_ref: NodeRef(1) }, parent_ref: NodeRef::NULL }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. }),
@@ -334,12 +309,12 @@ mod tests {
         assert_ast!(
             super::term(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
-                Node { kind: NodeKind::Term(0), parent: 2 },
-                Node { kind: NodeKind::ReturnStmt { expr: 1 }, parent: 3 },
-                Node { kind: NodeKind::Stmt { child: 2, next: None }, parent: 4 },
-                Node { kind: NodeKind::Block { first: Some(3) }, parent: 5 },
-                Node { kind: NodeKind::Term(4), parent: NULL_REF }
+                Node { kind: NodeKind::IntegerLiteral(DataRef(0)), parent_ref: NodeRef(1) },
+                Node { kind: NodeKind::Term(NodeRef(0)), parent_ref: NodeRef(2) },
+                Node { kind: NodeKind::ReturnStmt { expr_ref: NodeRef(1) }, parent_ref: NodeRef(3) },
+                Node { kind: NodeKind::Stmt { child_ref: NodeRef(2), next_ref: NodeRef::NULL }, parent_ref: NodeRef(4) },
+                Node { kind: NodeKind::Block { first_stmt_ref: NodeRef(3) }, parent_ref: NodeRef(5) },
+                Node { kind: NodeKind::Term(NodeRef(4)), parent_ref: NodeRef::NULL }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. }),
@@ -353,7 +328,7 @@ mod tests {
         let rest = assert_ast!(
             super::identifier().and(|_| super::integer()).or(super::identifier()), input,
             [ 
-                Node { kind: NodeKind::Identifier(0), .. }
+                Node { kind: NodeKind::Identifier(DataRef(0)), .. }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Identifier, .. })
@@ -368,11 +343,11 @@ mod tests {
         let rest = assert_ast!(
             super::expr(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
-                Node { kind: NodeKind::Term(0), parent: 4 },
-                Node { kind: NodeKind::IntegerLiteral(1), parent: 3 },
-                Node { kind: NodeKind::Term(2), parent:  4 },
-                Node { kind: NodeKind::BinExpr { left: 1, op: 2, right: 3 }, .. }
+                Node { kind: NodeKind::IntegerLiteral(DataRef(0)), .. },
+                Node { kind: NodeKind::Term(NodeRef(0)), parent_ref: NodeRef(4) },
+                Node { kind: NodeKind::IntegerLiteral(DataRef(1)), .. },
+                Node { kind: NodeKind::Term(NodeRef(2)), parent_ref:  NodeRef(4) },
+                Node { kind: NodeKind::BinExpr { left_ref: NodeRef(1), op_ref: DataRef(2), right_ref: NodeRef(3) }, .. }
             ],
             [
                 Data::Token(Token { kind: TokenKind::Int, .. }),
@@ -389,9 +364,9 @@ mod tests {
         assert_ast!(
             super::params(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), parent: 1 },
-                Node { kind: NodeKind::Term(0), parent: 2 },
-                Node { kind: NodeKind::Param { child: 1, next: None }, parent: NULL_REF }
+                Node { kind: NodeKind::IntegerLiteral(_), .. },
+                Node { kind: NodeKind::Term(_), .. },
+                Node { kind: NodeKind::Param { child_ref: NodeRef(1), next_ref: NodeRef::NULL }, parent_ref: NodeRef::NULL }
             ],
             [..]
         );
@@ -400,12 +375,12 @@ mod tests {
         assert_ast!(
             super::params(), input,
             [
-                Node { kind: NodeKind::IntegerLiteral(0), .. },
-                Node { kind: NodeKind::Term(0), .. },
-                Node { kind: NodeKind::Identifier(1), .. },
-                Node { kind: NodeKind::Term(2), .. },
-                Node { kind: NodeKind::Param { child: 3, next: None }, parent: 5 },
-                Node { kind: NodeKind::Param { child: 1, next: Some(4)}, parent: NULL_REF },
+                Node { kind: NodeKind::IntegerLiteral(_), .. },
+                Node { kind: NodeKind::Term(_), .. },
+                Node { kind: NodeKind::Identifier(_), .. },
+                Node { kind: NodeKind::Term(_), .. },
+                Node { kind: NodeKind::Param { child_ref: NodeRef(3), next_ref: NodeRef::NULL }, parent_ref: NodeRef(5) },
+                Node { kind: NodeKind::Param { child_ref: NodeRef(1), next_ref: NodeRef(4)}, parent_ref: NodeRef::NULL },
             ],
             [..]
         );
@@ -417,8 +392,8 @@ mod tests {
         assert_ast!(
             super::function_call_expr(), input,
             [
-                Node { kind: NodeKind::Identifier(0), parent: 1 },
-                Node { kind: NodeKind::FuncCallExpr { name: 0, params: None }, .. }
+                Node { kind: NodeKind::Identifier(_), parent_ref: NodeRef(1) },
+                Node { kind: NodeKind::FuncCallExpr { name_ref: NodeRef(0), first_param_ref: NodeRef::NULL }, .. }
             ],
             [..]
         );
@@ -427,11 +402,11 @@ mod tests {
         assert_ast!(
             super::function_call_expr(), input,
             [
-                Node { kind: NodeKind::Identifier(0), parent: 4 },
-                Node { kind: NodeKind::Identifier(1), .. },
-                Node { kind: NodeKind::Term(1), .. },
-                Node { kind: NodeKind::Param { child: 2, next: None }, .. },
-                Node { kind: NodeKind::FuncCallExpr { name: 0, params: Some(3) }, .. }
+                Node { kind: NodeKind::Identifier(_), parent_ref: NodeRef(4) },
+                Node { kind: NodeKind::Identifier(_), .. },
+                Node { kind: NodeKind::Term(_), .. },
+                Node { kind: NodeKind::Param { child_ref: NodeRef(2), next_ref: NodeRef::NULL }, parent_ref: NodeRef(4) },
+                Node { kind: NodeKind::FuncCallExpr { name_ref: NodeRef(0), first_param_ref: NodeRef(3) }, .. }
             ],
             [..]
         );
@@ -443,10 +418,10 @@ mod tests {
         assert_ast!(
             super::stmt(), input,
             [
-                Node { kind: NodeKind::Identifier(0), .. },
-                Node { kind: NodeKind::IntegerLiteral(1), .. },
-                Node { kind: NodeKind::Term(1), .. },
-                Node { kind: NodeKind::AssignStmt { name: 0, expr: 2 }, ..}
+                Node { kind: NodeKind::Identifier(_), .. },
+                Node { kind: NodeKind::IntegerLiteral(_), .. },
+                Node { kind: NodeKind::Term(_), .. },
+                Node { kind: NodeKind::AssignStmt { name_ref: NodeRef(0), expr_ref: NodeRef(2) }, ..}
             ],
             [..]
         );
@@ -462,64 +437,64 @@ mod tests {
                 _,
                 _,
                 Node { kind: NodeKind::FuncCallExpr { .. }, .. },
-                Node { kind: NodeKind::BinExpr { .. }, .. },
-                Node { kind: NodeKind::ExprStmt { expr: 4 }, .. }
+                Node { kind: NodeKind::BinExpr { .. }, parent_ref: NodeRef(5) },
+                Node { kind: NodeKind::ExprStmt { expr_ref: NodeRef(4) }, .. }
             ],
             [..]
         );
     }
 
     #[test]
-    fn test_empty_block() {
-        let input = input!("{}");
-        assert_ast!(
-            super::block(), input,
-            [
-               Node { kind: NodeKind::Block { first: None }, .. } 
-            ],
-            [..]
-        );
-    }
-
-    #[test]
-    fn test_block() {
+    fn simple_block() {
         let input = input!("{ 1; 2; }");
         assert_ast!(
             super::block(), input,
             [
                 _,
                 _,
-                Node { parent: 7, .. },
+                Node { parent_ref: NodeRef(7), .. },
                 _,
                 _,
-                Node { parent: 6, .. },
-                Node { kind: NodeKind::Stmt { child: 5, next: None }, parent: 7 },
-                Node { kind: NodeKind::Stmt { child: 2, next: Some(6) }, parent: 8 },
-                Node { kind: NodeKind::Block { first: Some(7) }, .. }
+                Node { parent_ref: NodeRef(6), .. },
+                Node { kind: NodeKind::Stmt { child_ref: NodeRef(5), next_ref: NodeRef::NULL }, parent_ref: NodeRef(7) },
+                Node { kind: NodeKind::Stmt { child_ref: NodeRef(2), next_ref: NodeRef(6) }, parent_ref: NodeRef(8) },
+                Node { kind: NodeKind::Block { first_stmt_ref: NodeRef(7) }, .. }
             ],
             [..]
         );
     }
 
     #[test]
-    fn test_return_stmt() {
+    fn empty_block() {
+        let input = input!("{}");
+        assert_ast!(
+            super::block(), input,
+            [
+               Node { kind: NodeKind::Block { first_stmt_ref: NodeRef::NULL }, .. } 
+            ],
+            [..]
+        );
+    }
+
+    #[test]
+    fn block_implicit_return() {
         let input = input!("{ 1; 2; 3 }");
         assert_ast!(
             super::block(), input,
             [
                 _,
                 _,
-                Node { parent: 11, .. },
+                Node { parent_ref: NodeRef(11), .. },
                 _,
                 _,
-                Node { parent: 10, .. },
+                Node { parent_ref: NodeRef(10), .. },
                 _,
                 _,
-                Node { kind: NodeKind::ReturnStmt { expr: 7 }, parent: 9 },
-                Node { kind: NodeKind::Stmt { child: 8, next: None }, parent: 10 },
-                Node { kind: NodeKind::Stmt { child: 5, next: Some(9) }, parent: 11 },
-                Node { kind: NodeKind::Stmt { child: 2, next: Some(10) }, parent: 12 },
-                Node { kind: NodeKind::Block { first: Some(11) }, .. }
+                Node { kind: NodeKind::ReturnStmt { expr_ref: NodeRef(7) }, parent_ref: NodeRef(9) },
+                Node { kind: NodeKind::Stmt { child_ref: NodeRef(8), next_ref: NodeRef::NULL }, parent_ref: NodeRef(10) },
+                Node { kind: NodeKind::Stmt { child_ref: NodeRef(5), next_ref: NodeRef(9) }, parent_ref: NodeRef(11) },
+                Node { kind: NodeKind::Stmt { child_ref: NodeRef(2), next_ref: NodeRef(10) }, parent_ref: NodeRef(12) },
+                Node { kind: NodeKind::Block { first_stmt_ref: NodeRef(11) }, .. }
             ],
             [..]
         );
