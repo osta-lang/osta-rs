@@ -19,14 +19,18 @@
 use proc_macro::TokenStream;
 
 use quote::quote;
+
 use crate::utils::crate_utils::crate_accessor;
 
 struct Sequence {
+    input_type: syn::Type,
     parsers: Vec<syn::Expr>,
 }
 
 impl syn::parse::Parse for Sequence {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let input_type = input.parse()?;
+        input.parse::<syn::Token![,]>()?;
         let mut parsers = Vec::new();
         while !input.is_empty() {
             parsers.push(input.parse()?);
@@ -37,12 +41,12 @@ impl syn::parse::Parse for Sequence {
                 break;
             }
         }
-        Ok(Sequence { parsers })
+        Ok(Sequence { input_type, parsers })
     }
 }
 
 pub fn sequence(input: TokenStream) -> TokenStream {
-    let Sequence { parsers } = syn::parse_macro_input!(input as Sequence);
+    let Sequence { input_type, parsers } = syn::parse_macro_input!(input as Sequence);
 
     let len = parsers.len();
 
@@ -52,8 +56,8 @@ pub fn sequence(input: TokenStream) -> TokenStream {
         }.into();
     }
 
-    let osta_parser_crate = crate_accessor("osta-parser");
-    let pair = quote! { #osta_parser_crate::parser::combinators::pair };
+    let osta_parser_crate = crate_accessor("osta-func");
+    let pair = quote! { #osta_parser_crate::combinators::fallible::foundational::pair };
 
     // pair(parser0, pair(parser1, ...))
     let main_parser = parsers.into_iter()
@@ -101,12 +105,13 @@ pub fn sequence(input: TokenStream) -> TokenStream {
 
     let output = quote! {{
         let parser = #main_parser;
-        move |input: &'a str| {
-            match parser.parse(input) {
-                Ok((#recursive_view, rest)) => {
-                    Ok(((#output_view), rest))
+        move |input: #input_type| {
+            let (result, rest) = parser.apply(input);
+            match result {
+                Ok(#recursive_view) => {
+                    (Ok((#output_view)), rest)
                 }
-                Err(e) => Err(e)
+                Err(e) => (Err(e), rest)
             }
         }
     }};

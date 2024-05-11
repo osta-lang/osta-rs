@@ -1,5 +1,5 @@
 [package]
-name = "osta-parser"
+name = "osta-func"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,3 @@ edition = "2021"
 
 [dependencies]
 osta-data = { path = "../osta-data" }
-osta-lexer = { path = "../osta-lexer" }
-osta-func = { path = "../osta-func" }
-osta-ast = { path = "../osta-ast" }
-osta-proc-macros = { path = "../osta-proc-macros" }

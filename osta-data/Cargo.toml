@@ -1,13 +1,9 @@
 [package]
-name = "osta-parser"
+name = "osta-data"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-osta-data = { path = "../osta-data" }
-osta-lexer = { path = "../osta-lexer" }
-osta-func = { path = "../osta-func" }
-osta-ast = { path = "../osta-ast" }
 osta-proc-macros = { path = "../osta-proc-macros" }

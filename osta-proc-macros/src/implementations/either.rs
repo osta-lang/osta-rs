@@ -28,49 +28,52 @@
 //!     }
 //! }
 //! ```
+//! for both left and right variants of the Either enum.
 
 use proc_macro::TokenStream;
 
 use quote::quote;
-use crate::utils::crate_utils::crate_accessor;
 
 pub fn impl_either_unwrap(input: TokenStream) -> TokenStream {
     let n = syn::parse_macro_input!(input as syn::LitInt).base10_parse::<usize>().unwrap();
 
-    let osta_parser_crate = crate_accessor("osta-parser");
-    let either_type = quote! { #osta_parser_crate::parser::combinators::Either };
+    let base_either = quote! { Either<T, T> };
 
-    let impls = (0..=n)
+    let either_left = (0..n)
         .fold(Vec::new(), |mut acc, i| {
-            if i == 0 {
-                acc.push(quote! { #either_type<T, T> });
-            } else {
-                let prev = &acc[i - 1];
-                acc.push(quote! { #either_type<T, #prev> });
-            }
+            let prev = if i == 0 { &base_either } else { &acc[i - 1] };
+            acc.push(quote! { Either<#prev, T> });
             acc
-        }).iter()
-        .enumerate()
-        .map(|(i, either)| {
-            if i == 0 {
-                quote! {
-                    impl<T> #either {
-                        pub fn unwrap(self) -> T {
-                            match self {
-                                #either_type::Left(v) => v,
-                                #either_type::Right(v) => v
-                            }
+        });
+    let either_right = (0..n)
+        .fold(Vec::new(), |mut acc, i| {
+            let prev = if i == 0 { &base_either } else { &acc[i - 1] };
+            acc.push(quote! { Either<T, #prev> });
+            acc
+        });
+
+    let either_left = either_left.into_iter()
+        .map(|either| {
+            quote! {
+                impl<T> #either {
+                    pub fn unwrap(self) -> T {
+                        match self {
+                            Either::Left(v) => v.unwrap(),
+                            Either::Right(v) => v
                         }
                     }
                 }
-            } else {
-                quote! {
-                    impl<T> #either {
-                        pub fn unwrap(self) -> T {
-                            match self {
-                                #either_type::Left(v) => v,
-                                #either_type::Right(v) => v.unwrap()
-                            }
+            }
+        })
+        .collect::<Vec<_>>();
+    let either_right = either_right.into_iter()
+        .map(|either| {
+            quote! {
+                impl<T> #either {
+                    pub fn unwrap(self) -> T {
+                        match self {
+                            Either::Left(v) => v,
+                            Either::Right(v) => v.unwrap()
                         }
                     }
                 }
@@ -79,7 +82,16 @@ pub fn impl_either_unwrap(input: TokenStream) -> TokenStream {
         .collect::<Vec<_>>();
 
     let output = quote! {
-        #(#impls)*
+        impl<T> #base_either {
+            pub fn unwrap(self) -> T {
+                match self {
+                    Either::Left(v) => v,
+                    Either::Right(v) => v
+                }
+            }
+        }
+        #(#either_left)*
+        #(#either_right)*
     };
 
     output.into()
