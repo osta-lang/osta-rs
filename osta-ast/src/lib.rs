@@ -24,6 +24,7 @@ pub enum NodeKind {
     AssignStmt { name_ref: NodeRef, expr_ref: NodeRef },
     ReturnStmt { expr_ref: NodeRef },
     Block { first_stmt_ref: NodeRef },
+    IfStmt { cond_ref: NodeRef, then_block_ref: NodeRef, else_block_ref: NodeRef },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,7 +76,7 @@ impl<'a> AstBuilder<'a> {
         self.checkpoints.pop().or_else(|| panic!("No checkpoints to commit"));
     }
 
-    /// It does't let you set the parent since the AST is built bottom up so at the step
+    /// It doesn't let you set the parent since the AST is built bottom up so at the step
     /// that you call this function you don't know the parent 
     pub fn push_node(&mut self, kind: NodeKind) -> NodeRef {
         let node_ref = NodeRef(self.ast.nodes.len());
@@ -211,6 +212,17 @@ impl<'a> AstBuilder<'a> {
     pub fn push_block(&mut self, first_stmt_ref: NodeRef) -> NodeRef {
         let node_ref = self.push_node(NodeKind::Block {  first_stmt_ref  });
         if first_stmt_ref != NodeRef::NULL { self.set_parent(first_stmt_ref, node_ref); }
+
+        node_ref
+    }
+
+    pub fn push_if_stmt(&mut self, cond_ref: NodeRef, then_block_ref: NodeRef, else_block_ref: NodeRef) -> NodeRef {
+        debug_assert!(cond_ref != NodeRef::NULL && then_block_ref != NodeRef::NULL);
+
+        let node_ref = self.push_node(NodeKind::IfStmt { cond_ref, then_block_ref, else_block_ref });
+        self.set_parent(cond_ref, node_ref);
+        self.set_parent(then_block_ref, node_ref);
+        if else_block_ref != NodeRef::NULL { self.set_parent(else_block_ref, node_ref); }
 
         node_ref
     }

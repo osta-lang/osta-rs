@@ -9,6 +9,7 @@ use crate::{*, error::ParserError};
 mod expr;
 mod stmt;
 mod block;
+mod flow;
 
 pub use expr::*;
 pub use stmt::*;
