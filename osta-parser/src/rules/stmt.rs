@@ -2,6 +2,7 @@ use osta_lexer::tokens;
 
 use super::*;
 use crate::rules::expr::*;
+use crate::rules::flow::if_stmt;
 
 fn expr_stmt<'a>() -> impl Parser<'a> {
     do_parse! {
@@ -42,7 +43,7 @@ fn return_stmt<'a>() -> impl Parser<'a> {
 }
 
 pub fn stmt<'a>() -> impl Parser<'a> {
-    expr_stmt().or(assign_stmt()).or(return_stmt())
+    expr_stmt().or(assign_stmt()).or(return_stmt()).or(if_stmt())
 }
 
 #[cfg(test)]
